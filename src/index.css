@@ -67,12 +67,14 @@
   }
 }
 
-/* Chart-specific styles */
-.chart-container .recharts-cartesian-grid-horizontal line,
-.chart-container .recharts-cartesian-grid-vertical line {
-  @apply stroke-grid stroke-opacity-50;
-}
+@layer components {
+  /* Chart-specific styles */
+  .chart-container .recharts-cartesian-grid-horizontal line,
+  .chart-container .recharts-cartesian-grid-vertical line {
+    @apply stroke-grid opacity-50;
+  }
 
-.chart-tooltip {
-  @apply bg-card border border-border px-3 py-2 rounded-md shadow-lg;
+  .chart-tooltip {
+    @apply bg-card border border-border px-3 py-2 rounded-md shadow-lg;
+  }
 }
