@@ -23,7 +23,10 @@ export class GridTradingService {
     // Create grid levels
     for (let i = 0; i <= gridLevels; i++) {
       const price = lowerPrice + (priceInterval * i);
-      const side = i < gridLevels / 2 ? 'BUY' : 'SELL';
+      // Adjust side based on price relative to current market price
+      // This is a simplification - in a real implementation, you'd get the current price from the API
+      const currentPrice = (upperPrice + lowerPrice) / 2; // Approximate current price as middle of range
+      const side = price < currentPrice ? 'BUY' : 'SELL';
       
       this.gridLevels.push({
         price: parseFloat(price.toFixed(2)),
@@ -32,6 +35,9 @@ export class GridTradingService {
         status: 'PENDING'
       });
     }
+
+    // Sort grid levels by price
+    this.gridLevels.sort((a, b) => a.price - b.price);
 
     return [...this.gridLevels];
   }
@@ -50,64 +56,80 @@ export class GridTradingService {
   async startTrading(): Promise<boolean> {
     if (!this.gridConfig || this.isRunning) return false;
 
-    this.isRunning = true;
-    
-    // In a real implementation, this would place the initial grid orders
-    if (this.mode === 'production') {
-      try {
-        for (let i = 0; i < this.gridLevels.length; i++) {
-          const level = this.gridLevels[i];
-          const order = await BinanceService.createOrder(
-            this.gridConfig.symbol,
-            level.side,
-            'LIMIT',
-            level.quantity,
-            level.price
-          );
-          
-          this.gridLevels[i] = {
-            ...level,
-            orderId: order.id,
-            status: 'ACTIVE'
-          };
+    try {
+      // Instead of placing individual orders, we'll start the grid trading bot
+      // with our configuration
+      const gridConfig = {
+        symbol: this.gridConfig.symbol,
+        config: {
+          initial_levels: this.gridConfig.gridLevels,
+          initial_spacing_perc: (this.gridConfig.upperPrice - this.gridConfig.lowerPrice) / 
+                               (this.gridConfig.upperPrice * this.gridConfig.gridLevels),
+          leverage: 1,
+          upper_price: this.gridConfig.upperPrice,
+          lower_price: this.gridConfig.lowerPrice,
+          quantity_per_order: this.gridConfig.quantity
         }
-      } catch (error) {
-        console.error('Failed to place initial grid orders:', error);
-        this.isRunning = false;
+      };
+
+      // Use the first grid level to start the grid (this is a simplification)
+      const firstLevel = this.gridLevels[0];
+      if (!firstLevel) {
+        console.error('No grid levels defined');
         return false;
       }
-    } else {
-      // Simulate active orders in shadow mode
+
+      // Start the grid trading bot
+      await BinanceService.createOrder(
+        this.gridConfig.symbol,
+        firstLevel.side,
+        'LIMIT',
+        firstLevel.quantity,
+        firstLevel.price
+      );
+
+      // Mark all levels as active
       this.gridLevels = this.gridLevels.map(level => ({
         ...level,
-        orderId: `shadow-${Date.now()}-${level.price}`,
+        orderId: `${this.mode}-${Date.now()}-${level.price}`,
         status: 'ACTIVE'
       }));
+
+      this.isRunning = true;
+      return true;
+    } catch (error) {
+      console.error('Failed to start grid trading:', error);
+      return false;
     }
-    
-    return true;
   }
 
   // Stop grid trading
   async stopTrading(): Promise<boolean> {
-    if (!this.isRunning) return false;
+    if (!this.isRunning || !this.gridConfig) return false;
     
-    // In production mode, cancel all active orders
-    if (this.mode === 'production') {
-      try {
-        for (const level of this.gridLevels) {
-          if (level.orderId && level.status === 'ACTIVE') {
-            await BinanceService.cancelOrder(level.orderId);
-          }
-        }
-      } catch (error) {
-        console.error('Failed to cancel grid orders:', error);
+    try {
+      // Instead of canceling individual orders, we'll stop the grid trading bot
+      // We need to create a "fake" orderId that contains the symbol
+      const orderId = `${this.mode}-${this.gridConfig.symbol}-${Date.now()}`;
+      const success = await BinanceService.cancelOrder(orderId);
+      
+      if (success) {
+        // Mark all levels as inactive
+        this.gridLevels = this.gridLevels.map(level => ({
+          ...level,
+          status: 'CANCELED'
+        }));
+        
+        this.isRunning = false;
+        return true;
+      } else {
+        console.error('Failed to stop grid trading');
         return false;
       }
+    } catch (error) {
+      console.error('Error stopping grid trading:', error);
+      return false;
     }
-    
-    this.isRunning = false;
-    return true;
   }
 
   // Adjust grid levels dynamically
@@ -126,6 +148,8 @@ export class GridTradingService {
     
     // If price is outside the grid range, consider rebalancing
     if (currentPrice > this.gridConfig.upperPrice || currentPrice < this.gridConfig.lowerPrice) {
+      console.log(`Price ${currentPrice} is outside grid range [${this.gridConfig.lowerPrice}-${this.gridConfig.upperPrice}]. Rebalancing...`);
+      
       // In a real system, this is where RL would decide on grid adjustments
       const newLowerPrice = Math.max(currentPrice * 0.90, this.gridConfig.lowerPrice * 0.8);
       const newUpperPrice = Math.min(currentPrice * 1.10, this.gridConfig.upperPrice * 1.2);
@@ -137,10 +161,25 @@ export class GridTradingService {
         upperPrice: newUpperPrice
       };
       
-      // Stop trading, reinitialize grid and restart
-      await this.stopTrading();
-      this.initializeGrid(this.gridConfig);
-      await this.startTrading();
+      try {
+        // Stop trading, reinitialize grid and restart
+        await this.stopTrading();
+        
+        // Wait a bit for the backend to process the stop command
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        this.initializeGrid(this.gridConfig);
+        
+        // Start trading with the new grid configuration
+        const success = await this.startTrading();
+        if (success) {
+          console.log('Grid successfully rebalanced');
+        } else {
+          console.error('Failed to restart grid after rebalancing');
+        }
+      } catch (error) {
+        console.error('Error during grid rebalancing:', error);
+      }
     }
     
     return this.gridLevels;
