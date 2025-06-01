@@ -141,6 +141,23 @@ export const RealBinanceService = {
     return response.data;
   },
 
+  // Create order method for grid service compatibility
+  async createOrder(symbol: string, side: 'BUY' | 'SELL', type: string, quantity: number, price: number): Promise<{ id: string }> {
+    const response = await api.post('/trading/orders', {
+      symbol,
+      side,
+      type,
+      quantity,
+      price
+    });
+    return { id: response.data.orderId || `order_${Date.now()}` };
+  },
+
+  // Cancel order method for grid service compatibility
+  async cancelOrder(orderId: string): Promise<void> {
+    await api.delete(`/trading/orders/${orderId}`);
+  },
+
   // Manter compatibilidade com interface antiga
   async getActiveOrders(): Promise<ActiveOrder[]> {
     // Implementar se necessário com endpoint específico

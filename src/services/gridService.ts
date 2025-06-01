@@ -1,6 +1,6 @@
 
 import { GridConfig, GridLevel, Position, TradingMode, MarketData } from '../types/trading';
-import { BinanceService } from './binanceService';
+import { RealBinanceService } from './realBinanceService';
 
 // Mock implementation of grid trading logic
 export class GridTradingService {
@@ -57,7 +57,7 @@ export class GridTradingService {
       try {
         for (let i = 0; i < this.gridLevels.length; i++) {
           const level = this.gridLevels[i];
-          const order = await BinanceService.createOrder(
+          const order = await RealBinanceService.createOrder(
             this.gridConfig.symbol,
             level.side,
             'LIMIT',
@@ -97,7 +97,7 @@ export class GridTradingService {
       try {
         for (const level of this.gridLevels) {
           if (level.orderId && level.status === 'ACTIVE') {
-            await BinanceService.cancelOrder(level.orderId);
+            await RealBinanceService.cancelOrder(level.orderId);
           }
         }
       } catch (error) {
