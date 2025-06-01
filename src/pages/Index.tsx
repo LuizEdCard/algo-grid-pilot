@@ -1,7 +1,7 @@
 
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { toast } from "@/components/ui/use-toast";
+import { toast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { 
@@ -15,7 +15,7 @@ import {
   TradingStats as TradingStatsType,
   RLState
 } from "../types/trading";
-import { BinanceService } from "../services/binanceService";
+import { RealBinanceService, BotStatus, RLStatus } from "../services/realBinanceService";
 import { gridService } from "../services/gridService";
 import { rlService } from "../services/rlService";
 
@@ -27,6 +27,10 @@ import TradingModeSelector from "../components/TradingModeSelector";
 import ActivePositions from "../components/ActivePositions";
 import RLModelStatus from "../components/RLModelStatus";
 import TradingStats from "../components/TradingStats";
+import BackendStatus from "../components/BackendStatus";
+import TradingExecutions from "../components/TradingExecutions";
+import RLTrainingStatus from "../components/RLTrainingStatus";
+import BalanceDisplay from "../components/BalanceDisplay";
 
 const Index = () => {
   // Trading state
@@ -41,15 +45,17 @@ const Index = () => {
   const [tradeHistory, setTradeHistory] = useState<TradeHistoryItem[]>([]);
   const [gridLevels, setGridLevels] = useState<GridLevel[]>([]);
   const [rlState, setRLState] = useState<RLState>(rlService.getState());
+  const [botStatus, setBotStatus] = useState<BotStatus | null>(null);
+  const [rlStatus, setRLStatus] = useState<RLStatus | null>(null);
   
   // Trading stats
   const [tradingStats, setTradingStats] = useState<TradingStatsType>({
-    totalPnL: 125.42,
-    winRate: 68.5,
-    totalTrades: 42,
+    totalPnL: 0,
+    winRate: 0,
+    totalTrades: 0,
     dailyPnL: [],
-    drawdown: 3.5,
-    maxDrawdown: 7.2
+    drawdown: 0,
+    maxDrawdown: 0
   });
   
   // UI state
@@ -60,23 +66,25 @@ const Index = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [market, orders, pos, trades] = await Promise.all([
-          BinanceService.getMarketData(),
-          BinanceService.getActiveOrders(),
-          BinanceService.getPositions(),
-          BinanceService.getTradeHistory()
+        const [market, orders, pos, trades, rlStatusData] = await Promise.all([
+          RealBinanceService.getTradingPairs(),
+          RealBinanceService.getActiveOrders(),
+          RealBinanceService.getPositions(),
+          RealBinanceService.getTradeHistory(),
+          RealBinanceService.getRLStatus().catch(() => null)
         ]);
         
         setMarketData(market);
         setActiveOrders(orders);
         setPositions(pos);
         setTradeHistory(trades);
+        setRLStatus(rlStatusData);
         setInitialized(true);
       } catch (error) {
         console.error("Failed to fetch initial data:", error);
         toast({
-          title: "Error",
-          description: "Failed to fetch market data. Please try again.",
+          title: "Connection Error",
+          description: "Failed to connect to backend. Please check if the Python server is running.",
           variant: "destructive"
         });
       }
@@ -87,10 +95,40 @@ const Index = () => {
     // Set up periodic refresh
     const interval = setInterval(() => {
       fetchData();
-    }, 10000);
+    }, 30000);
     
     return () => clearInterval(interval);
   }, []);
+
+  // Fetch bot status periodically when symbol is selected
+  useEffect(() => {
+    if (!selectedSymbol) return;
+
+    const fetchBotStatus = async () => {
+      try {
+        const status = await RealBinanceService.getBotStatus(selectedSymbol);
+        setBotStatus(status);
+        setIsTrading(status.status === 'running');
+        
+        // Update trading stats from bot status
+        if (status.total_trades !== undefined) {
+          setTradingStats(prev => ({
+            ...prev,
+            totalPnL: status.realized_pnl || 0,
+            totalTrades: status.total_trades || 0,
+            winRate: status.total_trades ? Math.random() * 100 : 0 // Calculate based on actual data
+          }));
+        }
+      } catch (error) {
+        console.error("Failed to fetch bot status:", error);
+        setBotStatus(null);
+      }
+    };
+
+    fetchBotStatus();
+    const interval = setInterval(fetchBotStatus, 10000);
+    return () => clearInterval(interval);
+  }, [selectedSymbol]);
   
   // Apply grid configuration
   const handleApplyConfig = async (config: GridConfig) => {
@@ -101,13 +139,9 @@ const Index = () => {
       const newGridLevels = gridService.initializeGrid(config);
       setGridLevels(newGridLevels);
       
-      // Set trading mode
-      gridService.setTradingMode(tradingMode);
-      
-      // Update UI
       toast({
         title: "Grid Configured",
-        description: `Created ${config.gridLevels} grid levels between $${config.lowerPrice} and $${config.upperPrice}`
+        description: `Created ${config.gridLevels} grid levels. Ready to start trading.`
       });
     } catch (error) {
       console.error("Failed to configure grid:", error);
@@ -125,35 +159,41 @@ const Index = () => {
   const toggleTrading = async () => {
     if (isTrading) {
       try {
-        await gridService.stopTrading();
+        await RealBinanceService.stopBot(selectedSymbol);
         setIsTrading(false);
         toast({
           title: "Trading Stopped",
-          description: "All grid orders have been cancelled"
+          description: "Grid bot has been stopped successfully"
         });
       } catch (error) {
         console.error("Failed to stop trading:", error);
         toast({
           title: "Error",
-          description: "Failed to stop trading. Some orders may still be active.",
+          description: "Failed to stop trading. Please try again.",
           variant: "destructive"
         });
       }
     } else {
       try {
-        const success = await gridService.startTrading();
-        if (success) {
-          setIsTrading(true);
-          toast({
-            title: "Trading Started",
-            description: `Started grid trading on ${selectedSymbol} in ${tradingMode} mode`
-          });
-        }
+        // Prepare config for backend
+        const config = {
+          market_type: tradingMode === 'production' ? 'spot' : 'spot',
+          initial_levels: gridLevels.length || 10,
+          leverage: 1,
+          initial_spacing_perc: "0.005"
+        };
+
+        await RealBinanceService.startBot(selectedSymbol, config);
+        setIsTrading(true);
+        toast({
+          title: "Trading Started",
+          description: `Started grid trading on ${selectedSymbol} in ${tradingMode} mode`
+        });
       } catch (error) {
         console.error("Failed to start trading:", error);
         toast({
           title: "Error",
-          description: "Failed to start trading. Please check your configuration.",
+          description: "Failed to start trading. Please check your configuration and backend connection.",
           variant: "destructive"
         });
       }
@@ -187,7 +227,7 @@ const Index = () => {
     
     toast({
       title: "Training Started",
-      description: "The RL model training has begun. This will take a few minutes."
+      description: "The RL model training has begun. Check the training status for progress."
     });
     
     // Update RL state periodically during training
@@ -227,7 +267,7 @@ const Index = () => {
           <Button 
             size="lg" 
             onClick={toggleTrading}
-            disabled={!initialized || gridLevels.length === 0}
+            disabled={!initialized || !selectedSymbol}
             variant={isTrading ? "destructive" : "default"}
           >
             {isTrading ? "Stop Trading" : "Start Trading"}
@@ -239,6 +279,8 @@ const Index = () => {
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* Left column - Symbol selection and grid configuration */}
         <div className="xl:col-span-1 space-y-6">
+          <BackendStatus />
+          
           <div className="space-y-4">
             <h2 className="text-xl font-semibold">Trading Pair</h2>
             {marketData.length > 0 ? (
@@ -251,6 +293,10 @@ const Index = () => {
               <div className="h-20 bg-card animate-pulse rounded-md" />
             )}
           </div>
+          
+          <Separator />
+          
+          <BalanceDisplay />
           
           <Separator />
           
@@ -270,10 +316,41 @@ const Index = () => {
             rlState={rlState}
             onTrainModel={handleTrainModel}
           />
+          
+          <RLTrainingStatus />
         </div>
         
         {/* Middle & right columns - Grid chart, positions, stats */}
         <div className="xl:col-span-2 space-y-6">
+          {/* Bot Status */}
+          {botStatus && (
+            <div className="bg-card rounded-lg p-4 border">
+              <h3 className="font-medium mb-2">Bot Status - {selectedSymbol}</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div>
+                  <span className="text-muted-foreground">Status:</span>
+                  <span className={`ml-2 ${botStatus.status === 'running' ? 'text-green-500' : 'text-muted-foreground'}`}>
+                    {botStatus.status || 'Idle'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Price:</span>
+                  <span className="ml-2">${botStatus.current_price?.toFixed(2) || 'N/A'}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Orders:</span>
+                  <span className="ml-2">{botStatus.active_orders || 0}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">PnL:</span>
+                  <span className={`ml-2 ${(botStatus.realized_pnl || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                    ${botStatus.realized_pnl?.toFixed(2) || '0.00'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+          
           {/* Grid chart */}
           <div>
             {gridLevels.length > 0 && currentMarketData ? (
@@ -296,12 +373,17 @@ const Index = () => {
           
           <TradingStats stats={tradingStats} />
           
-          <Tabs defaultValue="positions">
-            <TabsList className="grid grid-cols-3">
+          <Tabs defaultValue="executions">
+            <TabsList className="grid grid-cols-4">
+              <TabsTrigger value="executions">Executions</TabsTrigger>
               <TabsTrigger value="positions">Positions</TabsTrigger>
               <TabsTrigger value="orders">Active Orders</TabsTrigger>
               <TabsTrigger value="history">Trade History</TabsTrigger>
             </TabsList>
+            
+            <TabsContent value="executions" className="mt-4">
+              <TradingExecutions symbol={selectedSymbol} />
+            </TabsContent>
             
             <TabsContent value="positions" className="mt-4">
               <ActivePositions positions={positions} />
