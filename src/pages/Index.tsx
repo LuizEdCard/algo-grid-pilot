@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
@@ -35,7 +34,7 @@ import BalanceDisplay from "../components/BalanceDisplay";
 const Index = () => {
   // Trading state
   const [selectedSymbol, setSelectedSymbol] = useState<string>("BTCUSDT");
-  const [tradingMode, setTradingMode] = useState<TradingMode>("shadow");
+  const [tradingMode, setTradingMode] = useState<TradingMode>("production");
   const [isTrading, setIsTrading] = useState<boolean>(false);
   
   // Data state
@@ -177,7 +176,7 @@ const Index = () => {
       try {
         // Prepare config for backend
         const config = {
-          market_type: tradingMode === 'production' ? 'spot' : 'spot',
+          market_type: 'spot',
           initial_levels: gridLevels.length || 10,
           leverage: 1,
           initial_spacing_perc: "0.005"
@@ -187,7 +186,7 @@ const Index = () => {
         setIsTrading(true);
         toast({
           title: "Trading Started",
-          description: `Started grid trading on ${selectedSymbol} in ${tradingMode} mode`
+          description: `Started grid trading on ${selectedSymbol} in live mode`
         });
       } catch (error) {
         console.error("Failed to start trading:", error);
@@ -214,7 +213,7 @@ const Index = () => {
     setSelectedSymbol(symbol);
   };
   
-  // Handle trading mode change
+  // Handle trading mode change (not needed anymore but keeping for compatibility)
   const handleModeChange = (mode: TradingMode) => {
     if (isTrading) return;
     setTradingMode(mode);

@@ -1,5 +1,5 @@
 
-export type TradingMode = 'production' | 'shadow';
+export type TradingMode = 'production';
 
 export interface GridConfig {
   symbol: string;

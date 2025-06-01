@@ -16,30 +16,18 @@ const TradingModeSelector = ({
   return (
     <div className="flex items-center space-x-2">
       <Button
-        variant={currentMode === 'shadow' ? "default" : "outline"}
+        variant="default"
         size="sm"
-        onClick={() => !isTrading && onModeChange('shadow')}
-        disabled={isTrading || currentMode === 'shadow'}
+        disabled={true}
         className="flex items-center"
       >
-        <span className="w-2 h-2 bg-neutral mr-2 rounded-full animate-pulse-gentle"></span>
-        Shadow Mode
-      </Button>
-      
-      <Button
-        variant={currentMode === 'production' ? "default" : "outline"}
-        size="sm"
-        onClick={() => !isTrading && onModeChange('production')}
-        disabled={isTrading || currentMode === 'production'}
-        className="flex items-center"
-      >
-        <span className="w-2 h-2 bg-loss mr-2 rounded-full"></span>
-        Live Trading
+        <span className="w-2 h-2 bg-green-500 mr-2 rounded-full"></span>
+        Live Trading Mode
       </Button>
       
       {isTrading && (
         <span className="text-xs text-muted-foreground">
-          Cannot change mode while trading is active
+          Trading is active
         </span>
       )}
     </div>

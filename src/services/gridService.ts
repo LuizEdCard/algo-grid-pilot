@@ -2,11 +2,11 @@
 import { GridConfig, GridLevel, Position, TradingMode, MarketData } from '../types/trading';
 import { RealBinanceService } from './realBinanceService';
 
-// Mock implementation of grid trading logic
+// Production grid trading logic
 export class GridTradingService {
   private gridConfig: GridConfig | null = null;
   private gridLevels: GridLevel[] = [];
-  private mode: TradingMode = 'shadow';
+  private mode: TradingMode = 'production';
   private isRunning = false;
   private lastRebalance = 0;
 
@@ -41,7 +41,7 @@ export class GridTradingService {
     return [...this.gridLevels];
   }
 
-  // Set trading mode
+  // Set trading mode (always production now)
   setTradingMode(mode: TradingMode): void {
     this.mode = mode;
   }
@@ -52,37 +52,27 @@ export class GridTradingService {
 
     this.isRunning = true;
     
-    // In a real implementation, this would place the initial grid orders
-    if (this.mode === 'production') {
-      try {
-        for (let i = 0; i < this.gridLevels.length; i++) {
-          const level = this.gridLevels[i];
-          const order = await RealBinanceService.createOrder(
-            this.gridConfig.symbol,
-            level.side,
-            'LIMIT',
-            level.quantity,
-            level.price
-          );
-          
-          this.gridLevels[i] = {
-            ...level,
-            orderId: order.id,
-            status: 'ACTIVE'
-          };
-        }
-      } catch (error) {
-        console.error('Failed to place initial grid orders:', error);
-        this.isRunning = false;
-        return false;
+    try {
+      for (let i = 0; i < this.gridLevels.length; i++) {
+        const level = this.gridLevels[i];
+        const order = await RealBinanceService.createOrder(
+          this.gridConfig.symbol,
+          level.side,
+          'LIMIT',
+          level.quantity,
+          level.price
+        );
+        
+        this.gridLevels[i] = {
+          ...level,
+          orderId: order.id,
+          status: 'ACTIVE'
+        };
       }
-    } else {
-      // Simulate active orders in shadow mode
-      this.gridLevels = this.gridLevels.map(level => ({
-        ...level,
-        orderId: `shadow-${Date.now()}-${level.price}`,
-        status: 'ACTIVE'
-      }));
+    } catch (error) {
+      console.error('Failed to place initial grid orders:', error);
+      this.isRunning = false;
+      return false;
     }
     
     return true;
@@ -92,18 +82,15 @@ export class GridTradingService {
   async stopTrading(): Promise<boolean> {
     if (!this.isRunning) return false;
     
-    // In production mode, cancel all active orders
-    if (this.mode === 'production') {
-      try {
-        for (const level of this.gridLevels) {
-          if (level.orderId && level.status === 'ACTIVE') {
-            await RealBinanceService.cancelOrder(level.orderId);
-          }
+    try {
+      for (const level of this.gridLevels) {
+        if (level.orderId && level.status === 'ACTIVE') {
+          await RealBinanceService.cancelOrder(level.orderId);
         }
-      } catch (error) {
-        console.error('Failed to cancel grid orders:', error);
-        return false;
       }
+    } catch (error) {
+      console.error('Failed to cancel grid orders:', error);
+      return false;
     }
     
     this.isRunning = false;
