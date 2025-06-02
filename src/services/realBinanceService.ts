@@ -44,6 +44,17 @@ export interface TradeExecution {
   timestamp: number;
 }
 
+export interface IndicatorData {
+  indicator: string;
+  period: number;
+  values: { timestamp: number; value: number }[];
+}
+
+export interface RecommendedPair {
+  symbol: string;
+  score: number;
+}
+
 export const RealBinanceService = {
   // Verificar status do backend
   async checkStatus(): Promise<{ status: string }> {
@@ -94,6 +105,24 @@ export const RealBinanceService = {
     } catch (error) {
       return false;
     }
+  },
+
+  // Obter lista de indicadores disponíveis
+  async getAvailableIndicators(): Promise<string[]> {
+    const response = await api.get('/indicators/list');
+    return response.data;
+  },
+
+  // Obter dados de indicador específico
+  async getIndicatorData(symbol: string, type: string, period: number): Promise<IndicatorData> {
+    const response = await api.get(`/indicators/${symbol}?type=${type}&period=${period}`);
+    return response.data;
+  },
+
+  // Obter pares recomendados
+  async getRecommendedPairs(): Promise<RecommendedPair[]> {
+    const response = await api.get('/recommended_pairs');
+    return response.data;
   },
 
   // Obter resumo de saldo

@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
@@ -6,7 +7,6 @@ import { Separator } from "@/components/ui/separator";
 import { 
   GridConfig, 
   MarketData,
-  TradingMode, 
   ActiveOrder, 
   Position,
   TradeHistoryItem,
@@ -14,15 +14,15 @@ import {
   TradingStats as TradingStatsType,
   RLState
 } from "../types/trading";
-import { RealBinanceService, BotStatus, RLStatus } from "../services/realBinanceService";
+import { RealBinanceService, BotStatus, RLStatus, IndicatorData } from "../services/realBinanceService";
 import { gridService } from "../services/gridService";
 import { rlService } from "../services/rlService";
+import { useNotifications } from "../hooks/useNotifications";
 
 // Components
 import GridChart from "../components/GridChart";
 import SymbolSelector from "../components/SymbolSelector";
 import GridConfigForm from "../components/GridConfigForm";
-import TradingModeSelector from "../components/TradingModeSelector";
 import ActivePositions from "../components/ActivePositions";
 import RLModelStatus from "../components/RLModelStatus";
 import TradingStats from "../components/TradingStats";
@@ -30,11 +30,14 @@ import BackendStatus from "../components/BackendStatus";
 import TradingExecutions from "../components/TradingExecutions";
 import RLTrainingStatus from "../components/RLTrainingStatus";
 import BalanceDisplay from "../components/BalanceDisplay";
+import TechnicalIndicators from "../components/TechnicalIndicators";
+import RecommendedPairs from "../components/RecommendedPairs";
+import ManualPairSelector from "../components/ManualPairSelector";
+import NotificationCenter from "../components/NotificationCenter";
 
 const Index = () => {
   // Trading state
   const [selectedSymbol, setSelectedSymbol] = useState<string>("BTCUSDT");
-  const [tradingMode, setTradingMode] = useState<TradingMode>("production");
   const [isTrading, setIsTrading] = useState<boolean>(false);
   
   // Data state
@@ -46,6 +49,7 @@ const Index = () => {
   const [rlState, setRLState] = useState<RLState>(rlService.getState());
   const [botStatus, setBotStatus] = useState<BotStatus | null>(null);
   const [rlStatus, setRLStatus] = useState<RLStatus | null>(null);
+  const [indicatorData, setIndicatorData] = useState<IndicatorData[]>([]);
   
   // Trading stats
   const [tradingStats, setTradingStats] = useState<TradingStatsType>({
@@ -60,6 +64,19 @@ const Index = () => {
   // UI state
   const [isLoading, setIsLoading] = useState(false);
   const [initialized, setInitialized] = useState(false);
+  
+  // Notifications
+  const {
+    notifications,
+    markAsRead,
+    removeNotification,
+    clearAllNotifications,
+    notifyBotStarted,
+    notifyBotStopped,
+    notifyBotError,
+    notifySuccess,
+    notifyError
+  } = useNotifications();
   
   // Fetch initial data
   useEffect(() => {
@@ -81,11 +98,10 @@ const Index = () => {
         setInitialized(true);
       } catch (error) {
         console.error("Failed to fetch initial data:", error);
-        toast({
-          title: "Connection Error",
-          description: "Failed to connect to backend. Please check if the Python server is running.",
-          variant: "destructive"
-        });
+        notifyError(
+          "Erro de Conexão",
+          "Falha ao conectar com o backend. Verifique se o servidor Python está rodando."
+        );
       }
     };
     
@@ -138,17 +154,16 @@ const Index = () => {
       const newGridLevels = gridService.initializeGrid(config);
       setGridLevels(newGridLevels);
       
-      toast({
-        title: "Grid Configured",
-        description: `Created ${config.gridLevels} grid levels. Ready to start trading.`
-      });
+      notifySuccess(
+        "Grid Configurado",
+        `Criados ${config.gridLevels} níveis de grid. Pronto para iniciar trading.`
+      );
     } catch (error) {
       console.error("Failed to configure grid:", error);
-      toast({
-        title: "Configuration Error",
-        description: "Failed to configure grid. Please check your settings and try again.",
-        variant: "destructive"
-      });
+      notifyError(
+        "Erro de Configuração",
+        "Falha ao configurar grid. Verifique suas configurações e tente novamente."
+      );
     } finally {
       setIsLoading(false);
     }
@@ -160,17 +175,10 @@ const Index = () => {
       try {
         await RealBinanceService.stopBot(selectedSymbol);
         setIsTrading(false);
-        toast({
-          title: "Trading Stopped",
-          description: "Grid bot has been stopped successfully"
-        });
+        notifyBotStopped(selectedSymbol);
       } catch (error) {
         console.error("Failed to stop trading:", error);
-        toast({
-          title: "Error",
-          description: "Failed to stop trading. Please try again.",
-          variant: "destructive"
-        });
+        notifyBotError(selectedSymbol, "Falha ao parar trading");
       }
     } else {
       try {
@@ -184,17 +192,10 @@ const Index = () => {
 
         await RealBinanceService.startBot(selectedSymbol, config);
         setIsTrading(true);
-        toast({
-          title: "Trading Started",
-          description: `Started grid trading on ${selectedSymbol} in live mode`
-        });
+        notifyBotStarted(selectedSymbol);
       } catch (error) {
         console.error("Failed to start trading:", error);
-        toast({
-          title: "Error",
-          description: "Failed to start trading. Please check your configuration and backend connection.",
-          variant: "destructive"
-        });
+        notifyBotError(selectedSymbol, "Falha ao iniciar trading");
       }
     }
   };
@@ -202,21 +203,36 @@ const Index = () => {
   // Handle symbol change
   const handleSymbolChange = (symbol: string) => {
     if (isTrading) {
-      toast({
-        title: "Cannot Change Symbol",
-        description: "Please stop trading first before changing the trading pair",
-        variant: "destructive"
-      });
+      notifyError(
+        "Não é Possível Alterar Símbolo",
+        "Pare o trading primeiro antes de alterar o par de trading"
+      );
       return;
     }
     
     setSelectedSymbol(symbol);
   };
-  
-  // Handle trading mode change (not needed anymore but keeping for compatibility)
-  const handleModeChange = (mode: TradingMode) => {
-    if (isTrading) return;
-    setTradingMode(mode);
+
+  // Handle manual pair addition
+  const handlePairAdded = (symbol: string) => {
+    // Add to market data if not already present
+    const exists = marketData.find(m => m.symbol === symbol);
+    if (!exists) {
+      // Create a basic market data entry
+      const newMarketData: MarketData = {
+        symbol,
+        lastPrice: 0,
+        bid: 0,
+        ask: 0,
+        volume24h: 0,
+        priceChangePercent: 0,
+        high24h: 0,
+        low24h: 0
+      };
+      setMarketData(prev => [newMarketData, ...prev]);
+    }
+    
+    setSelectedSymbol(symbol);
   };
   
   // Start RL model training
@@ -224,10 +240,10 @@ const Index = () => {
     rlService.startTraining();
     setRLState(rlService.getState());
     
-    toast({
-      title: "Training Started",
-      description: "The RL model training has begun. Check the training status for progress."
-    });
+    notifySuccess(
+      "Treinamento Iniciado",
+      "O treinamento do modelo RL foi iniciado. Verifique o status de treinamento para acompanhar o progresso."
+    );
     
     // Update RL state periodically during training
     const interval = setInterval(() => {
@@ -236,12 +252,17 @@ const Index = () => {
       
       if (!newState.isTraining) {
         clearInterval(interval);
-        toast({
-          title: "Training Complete",
-          description: "The RL model has been updated with new market data"
-        });
+        notifySuccess(
+          "Treinamento Concluído",
+          "O modelo RL foi atualizado com novos dados de mercado"
+        );
       }
     }, 2000);
+  };
+
+  // Handle indicator data updates
+  const handleIndicatorDataUpdate = (indicators: IndicatorData[]) => {
+    setIndicatorData(indicators);
   };
   
   // Get current market data for selected symbol
@@ -256,11 +277,12 @@ const Index = () => {
           <p className="text-muted-foreground">Advanced Grid Trading with Reinforcement Learning</p>
         </div>
         
-        <div className="flex flex-col sm:flex-row gap-4">
-          <TradingModeSelector 
-            currentMode={tradingMode} 
-            onModeChange={handleModeChange}
-            isTrading={isTrading} 
+        <div className="flex flex-col sm:flex-row gap-4 items-end">
+          <NotificationCenter
+            notifications={notifications}
+            onMarkAsRead={markAsRead}
+            onRemove={removeNotification}
+            onClearAll={clearAllNotifications}
           />
           
           <Button 
@@ -269,19 +291,19 @@ const Index = () => {
             disabled={!initialized || !selectedSymbol}
             variant={isTrading ? "destructive" : "default"}
           >
-            {isTrading ? "Stop Trading" : "Start Trading"}
+            {isTrading ? "Parar Trading" : "Iniciar Trading"}
           </Button>
         </div>
       </div>
       
       {/* Main content */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        {/* Left column - Symbol selection and grid configuration */}
+        {/* Left column - Symbol selection and configuration */}
         <div className="xl:col-span-1 space-y-6">
           <BackendStatus />
           
           <div className="space-y-4">
-            <h2 className="text-xl font-semibold">Trading Pair</h2>
+            <h2 className="text-xl font-semibold">Par de Trading</h2>
             {marketData.length > 0 ? (
               <SymbolSelector 
                 marketData={marketData} 
@@ -295,12 +317,25 @@ const Index = () => {
           
           <Separator />
           
+          {/* Manual pair addition */}
+          <ManualPairSelector onPairAdded={handlePairAdded} />
+          
+          <Separator />
+          
+          {/* Recommended pairs */}
+          <RecommendedPairs 
+            onSelectPair={handleSymbolChange}
+            currentSymbol={selectedSymbol}
+          />
+          
+          <Separator />
+          
           <BalanceDisplay />
           
           <Separator />
           
           <div className="space-y-4">
-            <h2 className="text-xl font-semibold">Grid Configuration</h2>
+            <h2 className="text-xl font-semibold">Configuração do Grid</h2>
             <GridConfigForm 
               symbol={selectedSymbol}
               marketData={currentMarketData}
@@ -324,20 +359,20 @@ const Index = () => {
           {/* Bot Status */}
           {botStatus && (
             <div className="bg-card rounded-lg p-4 border">
-              <h3 className="font-medium mb-2">Bot Status - {selectedSymbol}</h3>
+              <h3 className="font-medium mb-2">Status do Bot - {selectedSymbol}</h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                 <div>
                   <span className="text-muted-foreground">Status:</span>
                   <span className={`ml-2 ${botStatus.status === 'running' ? 'text-green-500' : 'text-muted-foreground'}`}>
-                    {botStatus.status || 'Idle'}
+                    {botStatus.status === 'running' ? 'Ativo' : 'Inativo'}
                   </span>
                 </div>
                 <div>
-                  <span className="text-muted-foreground">Price:</span>
+                  <span className="text-muted-foreground">Preço:</span>
                   <span className="ml-2">${botStatus.current_price?.toFixed(2) || 'N/A'}</span>
                 </div>
                 <div>
-                  <span className="text-muted-foreground">Orders:</span>
+                  <span className="text-muted-foreground">Ordens:</span>
                   <span className="ml-2">{botStatus.active_orders || 0}</span>
                 </div>
                 <div>
@@ -349,6 +384,14 @@ const Index = () => {
               </div>
             </div>
           )}
+          
+          {/* Technical Indicators */}
+          <TechnicalIndicators 
+            symbol={selectedSymbol}
+            onIndicatorDataUpdate={handleIndicatorDataUpdate}
+          />
+          
+          <Separator />
           
           {/* Grid chart */}
           <div>
@@ -362,7 +405,7 @@ const Index = () => {
             ) : (
               <div className="h-[400px] bg-card animate-pulse rounded-md flex items-center justify-center">
                 <p className="text-muted-foreground">
-                  Configure and apply grid settings to visualize the grid
+                  Configure e aplique as configurações do grid para visualizar o gráfico
                 </p>
               </div>
             )}
@@ -374,10 +417,10 @@ const Index = () => {
           
           <Tabs defaultValue="executions">
             <TabsList className="grid grid-cols-4">
-              <TabsTrigger value="executions">Executions</TabsTrigger>
-              <TabsTrigger value="positions">Positions</TabsTrigger>
-              <TabsTrigger value="orders">Active Orders</TabsTrigger>
-              <TabsTrigger value="history">Trade History</TabsTrigger>
+              <TabsTrigger value="executions">Execuções</TabsTrigger>
+              <TabsTrigger value="positions">Posições</TabsTrigger>
+              <TabsTrigger value="orders">Ordens Ativas</TabsTrigger>
+              <TabsTrigger value="history">Histórico</TabsTrigger>
             </TabsList>
             
             <TabsContent value="executions" className="mt-4">
@@ -390,7 +433,7 @@ const Index = () => {
             
             <TabsContent value="orders" className="mt-4">
               <div className="rounded-lg border bg-card p-6">
-                <h3 className="font-medium mb-4">Active Orders</h3>
+                <h3 className="font-medium mb-4">Ordens Ativas</h3>
                 {activeOrders.length > 0 ? (
                   <div className="space-y-3">
                     {activeOrders.map(order => (
@@ -409,14 +452,14 @@ const Index = () => {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground">No active orders</p>
+                  <p className="text-sm text-muted-foreground">Nenhuma ordem ativa</p>
                 )}
               </div>
             </TabsContent>
             
             <TabsContent value="history" className="mt-4">
               <div className="rounded-lg border bg-card p-6">
-                <h3 className="font-medium mb-4">Recent Trades</h3>
+                <h3 className="font-medium mb-4">Trades Recentes</h3>
                 {tradeHistory.length > 0 ? (
                   <div className="space-y-3">
                     {tradeHistory.slice(0, 10).map(trade => (
@@ -442,7 +485,7 @@ const Index = () => {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground">No trade history</p>
+                  <p className="text-sm text-muted-foreground">Nenhum histórico de trades</p>
                 )}
               </div>
             </TabsContent>
