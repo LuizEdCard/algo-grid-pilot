@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
@@ -18,6 +17,8 @@ import { RealBinanceService, BotStatus, RLStatus, IndicatorData } from "../servi
 import { gridService } from "../services/gridService";
 import { rlService } from "../services/rlService";
 import { useNotifications } from "../hooks/useNotifications";
+import DrawingTools from "../components/DrawingTools";
+import OrderBook from "../components/OrderBook";
 
 // Components
 import GridChart from "../components/GridChart";
@@ -77,6 +78,10 @@ const Index = () => {
     notifySuccess,
     notifyError
   } = useNotifications();
+  
+  // Drawing tools state
+  const [selectedDrawingTool, setSelectedDrawingTool] = useState<string>('none');
+  const [drawingTools, setDrawingTools] = useState<any[]>([]);
   
   // Fetch initial data
   useEffect(() => {
@@ -268,6 +273,12 @@ const Index = () => {
   // Get current market data for selected symbol
   const currentMarketData = marketData.find(m => m.symbol === selectedSymbol);
 
+  // Drawing tools handlers
+  const handleClearDrawings = () => {
+    setDrawingTools([]);
+    setSelectedDrawingTool('none');
+  };
+
   return (
     <div className="flex flex-col min-h-screen p-4 md:p-6 max-w-screen-2xl mx-auto">
       {/* Header */}
@@ -296,10 +307,11 @@ const Index = () => {
         </div>
       </div>
       
-      {/* Main content */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+      {/* Main content with enhanced layout */}
+      <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
         {/* Left column - Symbol selection and configuration */}
         <div className="xl:col-span-1 space-y-6">
+          {/* BackendStatus */}
           <BackendStatus />
           
           <div className="space-y-4">
@@ -354,7 +366,7 @@ const Index = () => {
           <RLTrainingStatus />
         </div>
         
-        {/* Middle & right columns - Grid chart, positions, stats */}
+        {/* Middle columns - Grid chart, advanced features */}
         <div className="xl:col-span-2 space-y-6">
           {/* Bot Status */}
           {botStatus && (
@@ -385,27 +397,29 @@ const Index = () => {
             </div>
           )}
           
-          {/* Technical Indicators */}
-          <TechnicalIndicators 
-            symbol={selectedSymbol}
-            onIndicatorDataUpdate={handleIndicatorDataUpdate}
+          {/* Drawing Tools */}
+          <DrawingTools
+            selectedTool={selectedDrawingTool}
+            onToolSelect={setSelectedDrawingTool}
+            onClearDrawings={handleClearDrawings}
+            drawingTools={drawingTools}
           />
           
           <Separator />
           
-          {/* Grid chart */}
+          {/* Enhanced Grid chart with all advanced features */}
           <div>
             {gridLevels.length > 0 && currentMarketData ? (
               <GridChart 
                 symbol={selectedSymbol} 
                 gridLevels={gridLevels} 
                 marketData={currentMarketData}
-                height={400}
+                height={600}
               />
             ) : (
-              <div className="h-[400px] bg-card animate-pulse rounded-md flex items-center justify-center">
+              <div className="h-[600px] bg-card animate-pulse rounded-md flex items-center justify-center">
                 <p className="text-muted-foreground">
-                  Configure e aplique as configurações do grid para visualizar o gráfico
+                  Configure e aplique as configurações do grid para visualizar o gráfico avançado
                 </p>
               </div>
             )}
@@ -490,6 +504,20 @@ const Index = () => {
               </div>
             </TabsContent>
           </Tabs>
+        </div>
+        
+        {/* Right column - Order Book and additional tools */}
+        <div className="xl:col-span-1 space-y-6">
+          {/* Order Book */}
+          {currentMarketData && (
+            <OrderBook 
+              symbol={selectedSymbol}
+              currentPrice={currentMarketData.lastPrice}
+            />
+          )}
+          
+          {/* Market depth visualization could go here */}
+          {/* Additional trading tools could go here */}
         </div>
       </div>
     </div>
