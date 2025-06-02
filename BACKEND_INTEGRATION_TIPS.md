@@ -1,7 +1,7 @@
 
 # Dicas de Integração Backend - Grid Trading Bot
 
-Este documento fornece orientações específicas para implementar os endpoints no backend Python.
+Este documento fornece orientações específicas para implementar os endpoints no backend Python usando ta-lib.
 
 ---
 
@@ -48,7 +48,38 @@ class BotStatus(BaseModel):
 
 ---
 
-## 2. Implementação dos Endpoints Essenciais
+## 2. Instalação e Configuração da TA-Lib
+
+### Instalação no Linux/Ubuntu:
+```bash
+# Instalar dependências do sistema
+sudo apt-get update
+sudo apt-get install build-essential wget
+
+# Baixar e instalar TA-Lib C library
+wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
+tar -xzf ta-lib-0.4.0-src.tar.gz
+cd ta-lib/
+./configure --prefix=/usr
+make
+sudo make install
+
+# Instalar Python wrapper
+pip install TA-Lib
+```
+
+### Instalação no Windows:
+```bash
+# Baixar wheel pré-compilado ou usar conda
+pip install TA-Lib
+
+# Alternativa usando conda:
+conda install -c conda-forge ta-lib
+```
+
+---
+
+## 3. Implementação dos Endpoints Essenciais
 
 ### Status do Backend
 ```python
@@ -157,7 +188,7 @@ async def get_balance_summary():
 
 ---
 
-## 3. Sistema de Grid Trading
+## 4. Sistema de Grid Trading
 
 ### Iniciar Bot
 ```python
@@ -224,95 +255,179 @@ async def get_bot_status(symbol: str):
 
 ---
 
-## 4. Indicadores Técnicos
+## 5. Indicadores Técnicos com TA-Lib
 
 ### Lista de Indicadores
 ```python
-import ta
+import talib
+import numpy as np
 
 @app.get("/api/indicators/list")
 async def get_indicators_list():
     return [
         "SMA", "EMA", "RSI", "MACD", "ATR", 
-        "ADX", "BollingerBands", "Stochastic", "VWAP", "OBV"
+        "ADX", "BBANDS", "STOCH", "VWAP", "OBV"
     ]
 ```
 
-### Dados de Indicador
+### Dados de Indicador com TA-Lib
 ```python
 import pandas as pd
+from binance.client import Client
 
 @app.get("/api/indicators/{symbol}")
 async def get_indicator_data(symbol: str, type: str, period: int = 14):
     try:
         client = Client(api_key, api_secret)
         
-        # Obter dados históricos
-        klines = client.get_klines(symbol=symbol, interval="1h", limit=200)
+        # Obter dados históricos (mais dados para cálculos precisos)
+        klines = client.get_klines(symbol=symbol, interval="1h", limit=500)
         
-        # Converter para DataFrame
-        df = pd.DataFrame(klines, columns=[
-            'timestamp', 'open', 'high', 'low', 'close', 
-            'volume', 'close_time', 'quote_asset_volume',
-            'number_of_trades', 'taker_buy_base_asset_volume',
-            'taker_buy_quote_asset_volume', 'ignore'
-        ])
+        # Converter para arrays numpy (requerido pela TA-Lib)
+        closes = np.array([float(k[4]) for k in klines])  # close prices
+        highs = np.array([float(k[2]) for k in klines])   # high prices
+        lows = np.array([float(k[3]) for k in klines])    # low prices
+        volumes = np.array([float(k[5]) for k in klines]) # volumes
+        opens = np.array([float(k[1]) for k in klines])   # open prices
         
-        df['close'] = df['close'].astype(float)
-        df['high'] = df['high'].astype(float)
-        df['low'] = df['low'].astype(float)
-        df['volume'] = df['volume'].astype(float)
-        
-        # Calcular indicador
+        # Calcular indicador usando TA-Lib
         values = []
+        timestamps = [int(k[0]) for k in klines]
         
         if type == "SMA":
-            indicator_values = ta.trend.sma_indicator(df['close'], window=period)
+            indicator_values = talib.SMA(closes, timeperiod=period)
         elif type == "EMA":
-            indicator_values = ta.trend.ema_indicator(df['close'], window=period)
+            indicator_values = talib.EMA(closes, timeperiod=period)
         elif type == "RSI":
-            indicator_values = ta.momentum.rsi(df['close'], window=period)
+            indicator_values = talib.RSI(closes, timeperiod=period)
         elif type == "MACD":
-            indicator_values = ta.trend.macd(df['close'])
+            macd, macdsignal, macdhist = talib.MACD(closes, 
+                                                   fastperiod=12, 
+                                                   slowperiod=26, 
+                                                   signalperiod=9)
+            # Retornar apenas MACD line
+            indicator_values = macd
         elif type == "ATR":
-            indicator_values = ta.volatility.average_true_range(df['high'], df['low'], df['close'], window=period)
+            indicator_values = talib.ATR(highs, lows, closes, timeperiod=period)
         elif type == "ADX":
-            indicator_values = ta.trend.adx(df['high'], df['low'], df['close'], window=period)
+            indicator_values = talib.ADX(highs, lows, closes, timeperiod=period)
+        elif type == "BBANDS":
+            upper, middle, lower = talib.BBANDS(closes, 
+                                              timeperiod=period, 
+                                              nbdevup=2, 
+                                              nbdevdn=2, 
+                                              matype=0)
+            # Retornar banda média
+            indicator_values = middle
+        elif type == "STOCH":
+            slowk, slowd = talib.STOCH(highs, lows, closes,
+                                     fastk_period=5,
+                                     slowk_period=3,
+                                     slowk_matype=0,
+                                     slowd_period=3,
+                                     slowd_matype=0)
+            # Retornar %K
+            indicator_values = slowk
+        elif type == "VWAP":
+            # VWAP não está na TA-Lib, implementação manual
+            typical_price = (highs + lows + closes) / 3
+            cumulative_vol = np.cumsum(volumes)
+            cumulative_pv = np.cumsum(typical_price * volumes)
+            indicator_values = cumulative_pv / cumulative_vol
+        elif type == "OBV":
+            indicator_values = talib.OBV(closes, volumes)
         else:
             raise HTTPException(status_code=400, detail="Indicador não suportado")
         
-        # Formatar resposta
+        # Formatar resposta (remover valores NaN)
         for i, value in enumerate(indicator_values):
-            if pd.notna(value):
+            if not np.isnan(value):
                 values.append({
-                    "timestamp": int(klines[i][0]),
+                    "timestamp": timestamps[i],
                     "value": float(value)
                 })
         
         return {
             "indicator": type,
             "period": period,
-            "values": values[-50:]  # Últimos 50 valores
+            "values": values[-100:]  # Últimos 100 valores
         }
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 ```
 
+### Indicadores Avançados com TA-Lib
+```python
+@app.get("/api/indicators/{symbol}/advanced")
+async def get_advanced_indicator_data(symbol: str, type: str, period: int = 14):
+    """
+    Endpoint para indicadores que retornam múltiplas linhas
+    """
+    try:
+        client = Client(api_key, api_secret)
+        klines = client.get_klines(symbol=symbol, interval="1h", limit=500)
+        
+        closes = np.array([float(k[4]) for k in klines])
+        highs = np.array([float(k[2]) for k in klines])
+        lows = np.array([float(k[3]) for k in klines])
+        timestamps = [int(k[0]) for k in klines]
+        
+        if type == "MACD":
+            macd, signal, histogram = talib.MACD(closes)
+            
+            return {
+                "indicator": "MACD",
+                "period": period,
+                "macd": [{"timestamp": timestamps[i], "value": float(v)} 
+                        for i, v in enumerate(macd) if not np.isnan(v)],
+                "signal": [{"timestamp": timestamps[i], "value": float(v)} 
+                          for i, v in enumerate(signal) if not np.isnan(v)],
+                "histogram": [{"timestamp": timestamps[i], "value": float(v)} 
+                             for i, v in enumerate(histogram) if not np.isnan(v)]
+            }
+            
+        elif type == "BBANDS":
+            upper, middle, lower = talib.BBANDS(closes, timeperiod=period)
+            
+            return {
+                "indicator": "BBANDS",
+                "period": period,
+                "upper": [{"timestamp": timestamps[i], "value": float(v)} 
+                         for i, v in enumerate(upper) if not np.isnan(v)],
+                "middle": [{"timestamp": timestamps[i], "value": float(v)} 
+                          for i, v in enumerate(middle) if not np.isnan(v)],
+                "lower": [{"timestamp": timestamps[i], "value": float(v)} 
+                         for i, v in enumerate(lower) if not np.isnan(v)]
+            }
+            
+        elif type == "STOCH":
+            slowk, slowd = talib.STOCH(highs, lows, closes)
+            
+            return {
+                "indicator": "STOCH",
+                "period": period,
+                "k": [{"timestamp": timestamps[i], "value": float(v)} 
+                     for i, v in enumerate(slowk) if not np.isnan(v)],
+                "d": [{"timestamp": timestamps[i], "value": float(v)} 
+                     for i, v in enumerate(slowd) if not np.isnan(v)]
+            }
+        
+        else:
+            raise HTTPException(status_code=400, detail="Indicador avançado não suportado")
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+```
+
 ---
 
-## 5. Pares Recomendados
+## 6. Pares Recomendados
 
 ```python
 @app.get("/api/recommended_pairs")
 async def get_recommended_pairs():
     try:
-        # Implementar lógica de recomendação baseada em:
-        # - Volume
-        # - Volatilidade
-        # - Tendência
-        # - Análise técnica
-        
         client = Client(api_key, api_secret)
         ticker = client.get_ticker()
         
@@ -341,8 +456,24 @@ async def get_recommended_pairs():
                 elif 0.5 <= abs_change <= 8:
                     score += 0.3
                 
-                # Adicionar análise técnica aqui...
-                # RSI, tendência, suporte/resistência
+                # Adicionar análise técnica usando TA-Lib
+                try:
+                    # Obter dados para RSI
+                    klines = client.get_klines(symbol=t['symbol'], interval="1h", limit=50)
+                    if len(klines) >= 14:
+                        closes = np.array([float(k[4]) for k in klines])
+                        rsi = talib.RSI(closes, timeperiod=14)
+                        current_rsi = rsi[-1]
+                        
+                        # RSI próximo aos níveis ideais para grid trading
+                        if 30 <= current_rsi <= 70:
+                            score += 0.2
+                        elif 25 <= current_rsi <= 75:
+                            score += 0.1
+                            
+                except:
+                    # Se falhar análise técnica, não adiciona nem remove pontos
+                    pass
                 
                 if score > 0.5:
                     recommendations.append({
@@ -360,75 +491,53 @@ async def get_recommended_pairs():
 
 ---
 
-## 6. WebSocket para Notificações (Opcional)
+## 7. Tratamento de Erros Específicos da TA-Lib
 
 ```python
-from fastapi import WebSocket, WebSocketDisconnect
-import json
-
-class ConnectionManager:
-    def __init__(self):
-        self.active_connections: List[WebSocket] = []
-
-    async def connect(self, websocket: WebSocket):
-        await websocket.accept()
-        self.active_connections.append(websocket)
-
-    def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
-
-    async def broadcast(self, message: dict):
-        for connection in self.active_connections:
-            try:
-                await connection.send_text(json.dumps(message))
-            except:
-                pass
-
-manager = ConnectionManager()
-
-@app.websocket("/api/ws/notifications")
-async def websocket_endpoint(websocket: WebSocket):
-    await manager.connect(websocket)
-    try:
-        while True:
-            data = await websocket.receive_text()
-            # Processar mensagens do cliente se necessário
-    except WebSocketDisconnect:
-        manager.disconnect(websocket)
-
-# Função para enviar notificações
-async def send_notification(type: str, message: str):
-    await manager.broadcast({
-        "type": type,
-        "message": message,
-        "timestamp": datetime.now().isoformat()
-    })
-```
-
----
-
-## 7. Tratamento de Erros
-
-```python
+import numpy as np
 from fastapi import HTTPException
-from fastapi.responses import JSONResponse
 
-@app.exception_handler(Exception)
-async def general_exception_handler(request, exc):
-    return JSONResponse(
-        status_code=500,
-        content={
-            "detail": "Erro interno do servidor",
-            "error": str(exc)
-        }
-    )
+def safe_talib_calculation(func, *args, **kwargs):
+    """
+    Wrapper para cálculos TA-Lib com tratamento de erros
+    """
+    try:
+        result = func(*args, **kwargs)
+        
+        # Verificar se o resultado é válido
+        if isinstance(result, tuple):
+            # Para indicadores que retornam múltiplos arrays
+            return tuple(np.nan_to_num(arr, nan=0.0) for arr in result)
+        else:
+            # Para indicadores que retornam um array
+            return np.nan_to_num(result, nan=0.0)
+            
+    except Exception as e:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Erro no cálculo do indicador: {str(e)}"
+        )
 
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request, exc):
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"detail": exc.detail}
-    )
+# Exemplo de uso:
+@app.get("/api/indicators/{symbol}/safe")
+async def get_safe_indicator_data(symbol: str, type: str, period: int = 14):
+    try:
+        # ... código para obter dados ...
+        
+        if type == "RSI":
+            indicator_values = safe_talib_calculation(
+                talib.RSI, closes, timeperiod=period
+            )
+        elif type == "MACD":
+            macd, signal, histogram = safe_talib_calculation(
+                talib.MACD, closes, fastperiod=12, slowperiod=26, signalperiod=9
+            )
+            indicator_values = macd
+            
+        # ... resto do código ...
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 ```
 
 ---
@@ -447,6 +556,10 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     cors_origins: List[str] = ["http://localhost:3000"]
     
+    # Configurações específicas para TA-Lib
+    indicator_cache_ttl: int = 300  # 5 minutos
+    max_indicator_history: int = 1000
+    
     class Config:
         env_file = ".env"
 
@@ -455,51 +568,107 @@ settings = Settings()
 
 ---
 
-## 9. Logging
+## 9. Cache para Indicadores (Recomendado)
 
 ```python
-import logging
-from datetime import datetime
+from functools import lru_cache
+import time
 
-# Configurar logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('logs/gridbot.log'),
-        logging.StreamHandler()
-    ]
-)
+# Cache simples em memória
+indicator_cache = {}
 
-logger = logging.getLogger(__name__)
-
-# Usar em endpoints
-@app.get("/api/status")
-async def get_status():
-    logger.info("Status endpoint called")
-    return {"status": "ok"}
+@lru_cache(maxsize=100)
+def get_cached_klines(symbol: str, interval: str, limit: int):
+    """
+    Cache para dados de klines para evitar muitas requisições à Binance
+    """
+    cache_key = f"{symbol}_{interval}_{limit}"
+    current_time = time.time()
+    
+    if cache_key in indicator_cache:
+        data, timestamp = indicator_cache[cache_key]
+        if current_time - timestamp < 300:  # 5 minutos
+            return data
+    
+    # Buscar dados frescos
+    client = Client(api_key, api_secret)
+    klines = client.get_klines(symbol=symbol, interval=interval, limit=limit)
+    indicator_cache[cache_key] = (klines, current_time)
+    
+    return klines
 ```
 
 ---
 
-## 10. Testes
+## 10. Requisitos de Sistema
 
-```python
-# test_main.py
-from fastapi.testclient import TestClient
-from main import app
-
-client = TestClient(app)
-
-def test_status_endpoint():
-    response = client.get("/api/status")
-    assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
-
-def test_trading_pairs():
-    response = client.get("/api/trading/pairs")
-    assert response.status_code == 200
-    assert isinstance(response.json(), list)
+### requirements.txt
+```txt
+fastapi==0.104.1
+uvicorn==0.24.0
+python-binance==1.0.19
+TA-Lib==0.4.25
+numpy==1.24.3
+pandas==2.0.3
+pydantic==2.4.2
+python-multipart==0.0.6
 ```
 
-Estes exemplos fornecem uma base sólida para implementar todos os endpoints necessários no backend. Adapte conforme suas necessidades específicas e adicione validações de segurança apropriadas.
+### Dockerfile (opcional)
+```dockerfile
+FROM python:3.11-slim
+
+# Instalar dependências do sistema para TA-Lib
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Instalar TA-Lib
+RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
+    tar -xzf ta-lib-0.4.0-src.tar.gz && \
+    cd ta-lib/ && \
+    ./configure --prefix=/usr && \
+    make && \
+    make install && \
+    cd .. && \
+    rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+EXPOSE 8000
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+---
+
+## 11. Testes Específicos para TA-Lib
+
+```python
+# test_indicators.py
+import pytest
+import numpy as np
+from main import get_indicator_data
+
+def test_rsi_calculation():
+    # Teste com dados conhecidos
+    closes = np.array([44.0, 44.5, 44.9, 43.7, 44.9, 44.5, 44.6, 44.8, 44.2, 44.6, 44.8, 45.1, 45.3, 45.5, 45.4, 45.2, 45.1, 45.2, 45.1])
+    rsi = talib.RSI(closes, timeperiod=14)
+    
+    # RSI deve estar entre 0 e 100
+    assert all(0 <= val <= 100 for val in rsi if not np.isnan(val))
+
+def test_indicator_endpoint():
+    response = client.get("/api/indicators/BTCUSDT?type=RSI&period=14")
+    assert response.status_code == 200
+    data = response.json()
+    assert "indicator" in data
+    assert "values" in data
+    assert len(data["values"]) > 0
+```
+
+Estas implementações usam especificamente a TA-Lib e incluem tratamento de erros, cache e otimizações para produção. A TA-Lib é mais rápida e precisa que outras bibliotecas para indicadores técnicos.
+
