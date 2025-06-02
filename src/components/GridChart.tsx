@@ -7,13 +7,15 @@ interface GridChartProps {
   gridLevels: GridLevel[];
   marketData?: MarketData;
   height?: number;
+  onHeightChange?: (height: number) => void;
 }
 
 const GridChart: React.FC<GridChartProps> = ({ 
   symbol, 
   gridLevels, 
   marketData, 
-  height = 600 
+  height = 600,
+  onHeightChange
 }) => {
   return (
     <AdvancedChart
@@ -21,6 +23,7 @@ const GridChart: React.FC<GridChartProps> = ({
       gridLevels={gridLevels}
       marketData={marketData}
       height={height}
+      onHeightChange={onHeightChange}
     />
   );
 };

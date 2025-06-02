@@ -67,6 +67,7 @@ export interface GridLevel {
   quantity: number;
   orderId?: string;
   status: 'PENDING' | 'ACTIVE' | 'FILLED' | 'CANCELED';
+  expectedProfit?: number;
 }
 
 export interface MarketData {

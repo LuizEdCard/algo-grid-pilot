@@ -16,49 +16,75 @@ const OrderBook = ({ symbol, currentPrice }: OrderBookProps) => {
   const [spread, setSpread] = useState<number>(0);
 
   useEffect(() => {
-    // Simular dados do livro de ordens
-    generateMockOrderBook();
-    
-    const interval = setInterval(() => {
-      generateMockOrderBook();
-    }, 2000);
-    
-    return () => clearInterval(interval);
+    // Só buscar dados reais se currentPrice for válido
+    if (currentPrice > 0) {
+      fetchRealOrderBook();
+      
+      const interval = setInterval(() => {
+        fetchRealOrderBook();
+      }, 5000); // Atualizar a cada 5 segundos
+      
+      return () => clearInterval(interval);
+    }
   }, [symbol, currentPrice]);
 
-  const generateMockOrderBook = () => {
-    const bids: OrderBookEntry[] = [];
-    const asks: OrderBookEntry[] = [];
-    
-    // Gerar bids (ordens de compra) - preços abaixo do atual
-    for (let i = 0; i < 15; i++) {
-      const price = currentPrice * (1 - (i + 1) * 0.001);
-      const quantity = Math.random() * 10 + 0.1;
-      const total = bids.reduce((sum, bid) => sum + bid.quantity, 0) + quantity;
-      
-      bids.push({ price, quantity, total });
+  const fetchRealOrderBook = async () => {
+    // Verificar se temos currentPrice válido
+    if (!currentPrice || currentPrice <= 0) {
+      console.warn('OrderBook: currentPrice is invalid:', currentPrice);
+      return;
     }
-    
-    // Gerar asks (ordens de venda) - preços acima do atual
-    for (let i = 0; i < 15; i++) {
-      const price = currentPrice * (1 + (i + 1) * 0.001);
-      const quantity = Math.random() * 10 + 0.1;
-      const total = asks.reduce((sum, ask) => sum + ask.quantity, 0) + quantity;
+
+    try {
+      const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+      const response = await fetch(`${baseURL}/orderbook/${symbol}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        
+        if (data.bids && data.asks) {
+          // Processar dados reais do backend
+          const bids: OrderBookEntry[] = data.bids.map((bid: any, index: number) => ({
+            price: parseFloat(bid[0]),
+            quantity: parseFloat(bid[1]),
+            total: data.bids.slice(0, index + 1).reduce((sum: number, b: any) => sum + parseFloat(b[1]), 0)
+          }));
+          
+          const asks: OrderBookEntry[] = data.asks.map((ask: any, index: number) => ({
+            price: parseFloat(ask[0]),
+            quantity: parseFloat(ask[1]),
+            total: data.asks.slice(0, index + 1).reduce((sum: number, a: any) => sum + parseFloat(a[1]), 0)
+          }));
+
+          const bestBid = bids[0]?.price || 0;
+          const bestAsk = asks[0]?.price || 0;
+          const calculatedSpread = bestAsk - bestBid;
+          
+          setOrderBook({
+            bids: bids.reverse(), // Mostrar do maior para menor
+            asks,
+            lastUpdate: Date.now()
+          });
+          
+          setSpread(calculatedSpread);
+          console.log(`✅ Order book real carregado para ${symbol}`);
+          return;
+        }
+      }
       
-      asks.push({ price, quantity, total });
+      // Se chegou aqui, não há dados reais disponíveis
+      console.warn(`⚠️ Order book não disponível para ${symbol} - endpoint não implementado`);
+      setOrderBook(null);
+      
+    } catch (error) {
+      console.error(`❌ Erro ao buscar order book para ${symbol}:`, error);
+      setOrderBook(null);
     }
-    
-    const bestBid = bids[0]?.price || 0;
-    const bestAsk = asks[0]?.price || 0;
-    const calculatedSpread = bestAsk - bestBid;
-    
-    setOrderBook({
-      bids: bids.reverse(), // Mostrar do maior para menor
-      asks,
-      lastUpdate: Date.now()
-    });
-    
-    setSpread(calculatedSpread);
   };
 
   if (!orderBook) {
@@ -67,14 +93,21 @@ const OrderBook = ({ symbol, currentPrice }: OrderBookProps) => {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-sm">
             <BookOpen className="h-4 w-4" />
-            Livro de Ordens
+            Livro de Ordens - {symbol}
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="animate-pulse space-y-2">
-            {Array.from({ length: 10 }).map((_, i) => (
-              <div key={i} className="h-4 bg-muted rounded" />
-            ))}
+          <div className="text-center py-8 space-y-3">
+            <div className="text-2xl">📋</div>
+            <p className="text-sm text-muted-foreground">
+              Order Book não disponível
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Endpoint do backend não implementado
+            </p>
+            <p className="text-xs text-green-600">
+              ✅ Dados mock removidos para precisão
+            </p>
           </div>
         </CardContent>
       </Card>

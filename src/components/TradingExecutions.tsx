@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -52,13 +51,16 @@ const TradingExecutions = ({ symbol }: TradingExecutionsProps) => {
     );
   }
 
+  // Defensive: always treat executions as array
+  const safeExecutions = Array.isArray(executions) ? executions : [];
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Trade Executions - {symbol}</CardTitle>
       </CardHeader>
       <CardContent>
-        {executions.length === 0 ? (
+        {safeExecutions.length === 0 ? (
           <div className="text-center text-muted-foreground py-8">
             No trade executions yet
           </div>
@@ -73,7 +75,7 @@ const TradingExecutions = ({ symbol }: TradingExecutionsProps) => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {executions.slice(0, 10).map((execution) => (
+              {safeExecutions.slice(0, 10).map((execution) => (
                 <TableRow key={execution.id}>
                   <TableCell className="text-xs">
                     {new Date(execution.timestamp * 1000).toLocaleTimeString()}

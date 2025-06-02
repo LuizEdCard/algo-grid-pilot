@@ -1,8 +1,7 @@
-
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, 
-  Tooltip, ReferenceLine, ResponsiveContainer, Area, AreaChart
+  Tooltip, ReferenceLine, ResponsiveContainer, Area, AreaChart, Cell
 } from 'recharts';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Button } from "@/components/ui/button";
@@ -23,19 +22,22 @@ import {
   DrawingTool, CandlestickPattern, Timeframe, OrderBook 
 } from '../types/chart';
 import { GridLevel, MarketData } from '../types/trading';
+import axios from 'axios';
 
 interface AdvancedChartProps {
   symbol: string;
   gridLevels: GridLevel[];
   marketData?: MarketData;
   height?: number;
+  onHeightChange?: (height: number) => void;
 }
 
 const AdvancedChart: React.FC<AdvancedChartProps> = ({ 
   symbol, 
   gridLevels, 
   marketData, 
-  height = 600 
+  height = 600,
+  onHeightChange
 }) => {
   const [timeframe, setTimeframe] = useState<Timeframe>('15m');
   const [candleData, setCandleData] = useState<CandlestickData[]>([]);
@@ -45,6 +47,8 @@ const AdvancedChart: React.FC<AdvancedChartProps> = ({
   const [drawingTools, setDrawingTools] = useState<DrawingTool[]>([]);
   const [selectedTool, setSelectedTool] = useState<string>('none');
   const [isDrawing, setIsDrawing] = useState(false);
+  const [visibleRange, setVisibleRange] = useState({ start: 0, end: 100 });
+  const [zoomLevel, setZoomLevel] = useState(1);
   
   const [config, setConfig] = useState<ChartConfig>({
     showVolume: true,
@@ -62,11 +66,45 @@ const AdvancedChart: React.FC<AdvancedChartProps> = ({
     }
   });
 
+  // Buscar candles reais do backend
+  useEffect(() => {
+    let cancelled = false;
+    const fetchCandles = async () => {
+      if (!symbol) return;
+      try {
+        const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+        const res = await axios.get(`${baseURL}/klines/${symbol}`, {
+          params: {
+            interval: timeframe,
+            limit: 1000,
+            market_type: 'spot'
+          }
+        });
+        const data = res.data?.data;
+        if (Array.isArray(data) && data.length > 0 && !cancelled) {
+          setCandleData(data.map((k: any) => ({
+            timestamp: k.timestamp,
+            open: parseFloat(k.open),
+            high: parseFloat(k.high),
+            low: parseFloat(k.low),
+            close: parseFloat(k.close),
+            volume: parseFloat(k.volume)
+          })));
+        } else if (!cancelled) {
+          generateMockData();
+        }
+      } catch (e) {
+        console.log(`Failed to fetch candles for ${symbol}, using mock data:`, e);
+        if (!cancelled) generateMockData();
+      }
+    };
+    fetchCandles();
+    return () => { cancelled = true; };
+  }, [symbol, timeframe, marketData]);
+
   // Simular dados de candles e indicadores
   useEffect(() => {
-    if (!marketData) return;
-    
-    generateMockData();
+    if (!candleData.length) return;
     generateMockIndicators();
     detectCandlestickPatterns();
     
@@ -75,13 +113,13 @@ const AdvancedChart: React.FC<AdvancedChartProps> = ({
     }, 5000);
     
     return () => clearInterval(interval);
-  }, [symbol, timeframe, marketData]);
+  }, [candleData]);
 
   const generateMockData = () => {
     const basePrice = marketData?.lastPrice || 50000;
     const data: CandlestickData[] = [];
     
-    for (let i = 100; i >= 0; i--) {
+    for (let i = 1000; i >= 0; i--) {
       const timestamp = Date.now() - (i * getTimeframeMs(timeframe));
       const volatility = 0.02;
       const change = (Math.random() - 0.5) * volatility;
@@ -285,12 +323,119 @@ const AdvancedChart: React.FC<AdvancedChartProps> = ({
 
   // Combinar dados de candles e indicadores
   const chartData = useMemo(() => {
-    return candleData.map((candle, index) => ({
+    const allData = candleData.map((candle, index) => ({
       ...candle,
       ...indicatorData[index],
-      time: new Date(candle.timestamp).toLocaleTimeString()
+      time: new Date(candle.timestamp).toLocaleTimeString(),
+      candleColor: candle.close >= candle.open ? '#22c55e' : '#ef4444',
+      wickColor: candle.close >= candle.open ? '#22c55e' : '#ef4444',
+      bodyHeight: Math.abs(candle.close - candle.open),
+      bodyY: Math.min(candle.open, candle.close),
+      wickTop: candle.high,
+      wickBottom: candle.low
     }));
-  }, [candleData, indicatorData]);
+    
+    // Retornar apenas os dados visíveis baseado no range
+    const startIndex = Math.max(0, allData.length - visibleRange.end);
+    const endIndex = Math.max(0, allData.length - visibleRange.start);
+    return allData.slice(startIndex, endIndex);
+  }, [candleData, indicatorData, visibleRange]);
+
+
+  // Funções de controle do zoom e scroll
+  const handleZoomIn = () => {
+    setVisibleRange(prev => {
+      const currentRange = prev.end - prev.start;
+      const newRange = Math.max(20, Math.floor(currentRange * 0.7));
+      const center = (prev.start + prev.end) / 2;
+      const newStart = Math.max(0, Math.floor(center - newRange / 2));
+      const newEnd = Math.min(candleData.length, Math.floor(center + newRange / 2));
+      return { start: newStart, end: newEnd };
+    });
+  };
+
+  const handleZoomOut = () => {
+    setVisibleRange(prev => {
+      const currentRange = prev.end - prev.start;
+      const newRange = Math.min(candleData.length, Math.floor(currentRange * 1.3));
+      const center = (prev.start + prev.end) / 2;
+      const newStart = Math.max(0, Math.floor(center - newRange / 2));
+      const newEnd = Math.min(candleData.length, Math.floor(center + newRange / 2));
+      return { start: newStart, end: newEnd };
+    });
+  };
+
+  const handleScroll = (direction: 'left' | 'right') => {
+    setVisibleRange(prev => {
+      const range = prev.end - prev.start;
+      const step = Math.max(5, Math.floor(range * 0.2));
+      
+      if (direction === 'left') {
+        const newStart = Math.max(0, prev.start - step);
+        const newEnd = Math.max(newStart + range, prev.end - step);
+        return { start: newStart, end: newEnd };
+      } else {
+        const newEnd = Math.min(candleData.length, prev.end + step);
+        const newStart = Math.min(newEnd - range, prev.start + step);
+        return { start: newStart, end: newEnd };
+      }
+    });
+  };
+
+  // Atualizar range visível quando dados mudam
+  useEffect(() => {
+    if (candleData.length > 0) {
+      setVisibleRange({
+        start: Math.max(0, candleData.length - 100),
+        end: candleData.length
+      });
+    }
+  }, [candleData.length]);
+
+  // Custom candlestick component
+  const CandlestickBar = ({ payload, x, y, width, height }: any) => {
+    if (!payload) return null;
+    
+    const { open, high, low, close } = payload;
+    const isGreen = close >= open;
+    const color = isGreen ? '#22c55e' : '#ef4444';
+    
+    const bodyTop = Math.max(open, close);
+    const bodyBottom = Math.min(open, close);
+    const bodyHeight = Math.abs(close - open);
+    
+    // Scale calculations (simplified)
+    const scale = height / (high - low);
+    const wickX = x + width / 2;
+    const bodyY = y + (high - bodyTop) * scale;
+    const wickTopY = y;
+    const wickBottomY = y + (high - low) * scale;
+    const scaledBodyHeight = bodyHeight * scale;
+    
+    return (
+      <g>
+        {/* Wick */}
+        <line
+          x1={wickX}
+          y1={wickTopY}
+          x2={wickX}
+          y2={wickBottomY}
+          stroke={color}
+          strokeWidth={1}
+        />
+        {/* Body */}
+        <rect
+          x={x + width * 0.2}
+          y={bodyY}
+          width={width * 0.6}
+          height={scaledBodyHeight || 2}
+          fill={isGreen ? color : color}
+          stroke={color}
+          strokeWidth={1}
+        />
+      </g>
+    );
+  };
 
   const chartConfig = {
     price: { label: "Preço", color: "hsl(var(--chart-1))" },
@@ -381,21 +526,156 @@ const AdvancedChart: React.FC<AdvancedChartProps> = ({
         </TabsList>
         
         <TabsContent value="main" className="space-y-4">
-          <ChartContainer config={chartConfig} className="h-96">
+          <div className="flex justify-between items-center mb-2">
+            <div className="flex gap-2">
+              <Button
+                variant={config.candleType === 'candle' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setConfig(prev => ({ ...prev, candleType: 'candle' }))}
+              >
+                Velas
+              </Button>
+              <Button
+                variant={config.candleType === 'line' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setConfig(prev => ({ ...prev, candleType: 'line' }))}
+              >
+                Linha
+              </Button>
+              
+              <Separator orientation="vertical" className="h-6" />
+              
+              {/* Controles de Zoom e Scroll */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleScroll('left')}
+                disabled={visibleRange.start <= 0}
+              >
+                ←
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleScroll('right')}
+                disabled={visibleRange.end >= candleData.length}
+              >
+                →
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleZoomIn}
+                disabled={visibleRange.end - visibleRange.start <= 20}
+              >
+                +
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleZoomOut}
+                disabled={visibleRange.end - visibleRange.start >= candleData.length}
+              >
+                -
+              </Button>
+              
+              <span className="text-sm text-muted-foreground">
+                {visibleRange.end - visibleRange.start} velas | {timeframe}
+              </span>
+              
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setVisibleRange({
+                    start: Math.max(0, candleData.length - 100),
+                    end: candleData.length
+                  });
+                }}
+              >
+                Reset
+              </Button>
+            </div>
+            
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const newHeight = height === 600 ? 800 : 600;
+                if (onHeightChange) {
+                  onHeightChange(newHeight);
+                }
+                setConfig(prev => ({ ...prev, expanded: newHeight > 600 }));
+              }}
+            >
+              {height > 600 ? 'Reduzir' : 'Expandir'} Gráfico
+            </Button>
+          </div>
+          
+          <ChartContainer config={chartConfig} className={`${height > 600 ? 'h-[800px]' : 'h-96'}`}>
             <ComposedChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" className={config.showGrid ? '' : 'hidden'} />
-              <XAxis dataKey="time" />
-              <YAxis domain={['dataMin - 100', 'dataMax + 100']} />
+              <XAxis 
+                dataKey="time" 
+                tick={{ fontSize: 12 }}
+                interval="preserveStartEnd"
+              />
+              <YAxis 
+                domain={['dataMin', 'dataMax']}
+                tick={{ fontSize: 12 }}
+                tickFormatter={(value) => {
+                  if (typeof value !== 'number' || value <= 0) return '';
+                  if (value >= 1000) return `$${(value/1000).toFixed(1)}k`;
+                  if (value >= 1) return `$${value.toFixed(2)}`;
+                  return `$${value.toFixed(6)}`;
+                }}
+              />
               <ChartTooltip content={<ChartTooltipContent />} />
               
-              {/* Preço principal - linha */}
-              <Line 
-                type="monotone" 
-                dataKey="close" 
-                stroke="var(--color-price)" 
-                strokeWidth={2}
-                dot={false}
-              />
+              {/* Candlesticks ou linha baseado no tipo */}
+              {config.candleType === 'line' ? (
+                <Line 
+                  type="monotone" 
+                  dataKey="close" 
+                  stroke="var(--color-price)" 
+                  strokeWidth={2}
+                  dot={false}
+                />
+              ) : (
+                // Para candlesticks, usar linha de close temporariamente até implementar componente customizado
+                <>
+                  <Line 
+                    type="monotone" 
+                    dataKey="high" 
+                    stroke="#666" 
+                    strokeWidth={1}
+                    dot={false}
+                    strokeDasharray="1 1"
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="low" 
+                    stroke="#666" 
+                    strokeWidth={1}
+                    dot={false}
+                    strokeDasharray="1 1"
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="open" 
+                    stroke="#ef4444" 
+                    strokeWidth={2}
+                    dot={false}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="close" 
+                    stroke="#22c55e" 
+                    strokeWidth={2}
+                    dot={false}
+                  />
+                </>
+              )}
               
               {/* Médias Móveis */}
               {config.indicators.sma.enabled && (
@@ -428,13 +708,25 @@ const AdvancedChart: React.FC<AdvancedChartProps> = ({
                 />
               ))}
               
-              {/* Preço atual */}
-              {marketData && (
+              {/* Preço atual - sempre visível e dentro do domínio */}
+              {marketData && marketData.lastPrice > 0 && (
                 <ReferenceLine 
                   y={marketData.lastPrice} 
                   stroke="#f59e0b" 
-                  strokeDasharray="3 3" 
-                  label={{ value: `$${marketData.lastPrice.toFixed(2)}`, position: 'insideTopRight' }}
+                  strokeWidth={2}
+                  strokeDasharray="2 2" 
+                  label={{ 
+                    value: `${marketData.lastPrice >= 1 ? '$' + marketData.lastPrice.toFixed(2) : '$' + marketData.lastPrice.toFixed(6)}`, 
+                    position: 'insideTopRight',
+                    style: { 
+                      fill: '#f59e0b', 
+                      fontWeight: 'bold',
+                      fontSize: '12px',
+                      backgroundColor: 'rgba(0,0,0,0.8)',
+                      padding: '2px 4px',
+                      borderRadius: '2px'
+                    }
+                  }}
                 />
               )}
             </ComposedChart>

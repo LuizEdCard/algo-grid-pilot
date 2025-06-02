@@ -2,7 +2,11 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { RLState } from "../types/trading";
+import { rlService } from "../services/rlService";
 import { useEffect, useState } from "react";
 import { 
   BarChart, 
@@ -21,6 +25,8 @@ interface RLModelStatusProps {
 const RLModelStatus = ({ rlState, onTrainModel }: RLModelStatusProps) => {
   const { currentModel, isTraining, lastTrainingTime, performance, confidence } = rlState;
   const [simulatedRewards, setSimulatedRewards] = useState<{ episode: number; reward: number }[]>([]);
+  const [autonomousMode, setAutonomousMode] = useState(rlService.getAutonomousMode());
+  const [autonomousStatus, setAutonomousStatus] = useState(rlService.getAutonomousStatus());
   
   // Generate simulated reward data for visualization
   useEffect(() => {
@@ -30,6 +36,20 @@ const RLModelStatus = ({ rlState, onTrainModel }: RLModelStatusProps) => {
     }));
     setSimulatedRewards(data);
   }, [performance]);
+
+  // Update autonomous status periodically
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setAutonomousStatus(rlService.getAutonomousStatus());
+    }, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleAutonomousModeChange = (enabled: boolean) => {
+    rlService.setAutonomousMode(enabled);
+    setAutonomousMode(enabled);
+    setAutonomousStatus(rlService.getAutonomousStatus());
+  };
 
   return (
     <Card>
@@ -77,6 +97,54 @@ const RLModelStatus = ({ rlState, onTrainModel }: RLModelStatusProps) => {
           </div>
         </div>
         
+        {/* Autonomous Trading Mode */}
+        <div className="pt-4 border-t">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center space-x-2">
+              <Switch 
+                id="autonomous-mode"
+                checked={autonomousMode}
+                onCheckedChange={handleAutonomousModeChange}
+              />
+              <Label htmlFor="autonomous-mode" className="text-sm font-medium">
+                Modo Autônomo
+              </Label>
+            </div>
+            <Badge variant={autonomousMode ? 'default' : 'secondary'}>
+              {autonomousMode ? 'Ativo' : 'Inativo'}
+            </Badge>
+          </div>
+          
+          {autonomousMode && (
+            <div className="text-xs space-y-2 bg-muted p-3 rounded">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <span className="text-muted-foreground">Bots Ativos:</span>
+                  <span className="ml-1 font-medium">{autonomousStatus.activeBots.length}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Próxima Análise:</span>
+                  <span className="ml-1 font-medium">
+                    {Math.max(0, Math.round((autonomousStatus.nextAnalysis - Date.now()) / 60000))}m
+                  </span>
+                </div>
+              </div>
+              {autonomousStatus.activeBots.length > 0 && (
+                <div>
+                  <span className="text-muted-foreground">Pares:</span>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {autonomousStatus.activeBots.map(symbol => (
+                      <Badge key={symbol} variant="outline" className="text-xs">
+                        {symbol}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         <div className="pt-2">
           <p className="text-sm font-medium mb-2">Recent Training Rewards</p>
           <ResponsiveContainer width="100%" height={100}>

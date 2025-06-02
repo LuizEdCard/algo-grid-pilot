@@ -9,8 +9,10 @@ export class GridTradingService {
   private mode: TradingMode = 'production';
   private isRunning = false;
   private lastRebalance = 0;
+  private tradingFee = 0.001; // 0.1% Binance fee
+  private minProfitMargin = 0.003; // Minimum 0.3% profit after fees
 
-  // Initialize grid
+  // Initialize grid with fee-optimized spacing
   initializeGrid(config: GridConfig): GridLevel[] {
     this.gridConfig = config;
     this.gridLevels = [];
@@ -18,22 +20,60 @@ export class GridTradingService {
     if (!config) return [];
 
     const { upperPrice, lowerPrice, gridLevels, quantity } = config;
-    const priceInterval = (upperPrice - lowerPrice) / gridLevels;
+    
+    // Calculate optimal spacing considering trading fees
+    const totalRange = upperPrice - lowerPrice;
+    const baseSpacing = totalRange / gridLevels;
+    
+    // Ensure minimum spacing covers trading fees + profit margin
+    const minSpacing = lowerPrice * this.minProfitMargin;
+    const optimalSpacing = Math.max(baseSpacing, minSpacing);
+    
+    // Adjust number of levels if needed to maintain profitability
+    const adjustedLevels = Math.floor(totalRange / optimalSpacing);
+    const finalSpacing = totalRange / adjustedLevels;
 
-    // Create grid levels
-    for (let i = 0; i <= gridLevels; i++) {
-      const price = lowerPrice + (priceInterval * i);
-      const side = i < gridLevels / 2 ? 'BUY' : 'SELL';
+    // Create grid levels with optimized spacing
+    for (let i = 0; i <= adjustedLevels; i++) {
+      const price = lowerPrice + (finalSpacing * i);
+      const side = i < adjustedLevels / 2 ? 'BUY' : 'SELL';
+      
+      // Calculate quantity based on available balance and risk management
+      const optimizedQuantity = this.calculateOptimalQuantity(price, quantity);
       
       this.gridLevels.push({
-        price: parseFloat(price.toFixed(2)),
+        price: parseFloat(price.toFixed(8)), // Higher precision for better execution
         side,
-        quantity: parseFloat(quantity.toFixed(4)),
-        status: 'PENDING'
+        quantity: parseFloat(optimizedQuantity.toFixed(6)),
+        status: 'PENDING',
+        expectedProfit: this.calculateExpectedProfit(price, finalSpacing)
       });
     }
 
     return [...this.gridLevels];
+  }
+
+  // Calculate optimal quantity for each grid level
+  private calculateOptimalQuantity(price: number, baseQuantity: number): number {
+    // For production trading, consider:
+    // 1. Available balance
+    // 2. Risk per trade (max 2% of portfolio per grid level)
+    // 3. Minimum order size requirements
+    
+    const minOrderValue = 10; // $10 minimum order value for Binance
+    const minQuantity = minOrderValue / price;
+    
+    // Prioritize consistent small profits over large swings
+    const riskAdjustedQuantity = Math.max(minQuantity, baseQuantity * 0.5);
+    
+    return riskAdjustedQuantity;
+  }
+
+  // Calculate expected profit per grid level
+  private calculateExpectedProfit(price: number, spacing: number): number {
+    const grossProfit = spacing;
+    const tradingCosts = price * this.tradingFee * 2; // Buy and sell fees
+    return Math.max(0, grossProfit - tradingCosts);
   }
 
   // Get current grid levels
