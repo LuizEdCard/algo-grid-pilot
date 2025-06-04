@@ -79,9 +79,7 @@ const BinanceStyleChart: React.FC<BinanceStyleChartProps> = ({
   const [lastUpdate, setLastUpdate] = useState<number>(Date.now());
   const [hasError, setHasError] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
-  const [zoomLevel, setZoomLevel] = useState(100);
   const [visibleCandles, setVisibleCandles] = useState(100);
-  const [priceRange, setPriceRange] = useState<[number, number]>([0, 0]);
   const [showOrderPanel, setShowOrderPanel] = useState(false);
   const [orderType, setOrderType] = useState<'BUY' | 'SELL'>('BUY');
   const [orderPrice, setOrderPrice] = useState('');
@@ -103,7 +101,7 @@ const BinanceStyleChart: React.FC<BinanceStyleChartProps> = ({
     atr: { enabled: false, color: '#f97316', description: 'Average True Range', category: 'volatility', complementary: ['bollinger'] }
   });
 
-  // Buscar dados de candles
+  // Fetch real candle data from backend
   const fetchCandleData = useCallback(async () => {
     if (!symbol) return;
     
@@ -125,32 +123,24 @@ const BinanceStyleChart: React.FC<BinanceStyleChartProps> = ({
       if (response.data?.data && Array.isArray(response.data.data) && response.data.data.length > 0) {
         const processedData = processCandles(response.data.data);
         setCandleData(processedData);
-        
-        // Calcular range de preços automaticamente
-        const prices = processedData.flatMap(c => [c.high, c.low]);
-        const minPrice = Math.min(...prices);
-        const maxPrice = Math.max(...prices);
-        const padding = (maxPrice - minPrice) * 0.05;
-        setPriceRange([minPrice - padding, maxPrice + padding]);
-        
         setHasError(false);
-        console.log(`✅ Dados carregados para ${symbol}: ${response.data.data.length} candles`);
+        console.log(`✅ Real data loaded for ${symbol}: ${response.data.data.length} candles`);
       } else {
         setCandleData([]);
         setHasError(true);
-        setErrorMessage(`Nenhum dado disponível para ${symbol}`);
+        setErrorMessage(`No real data available for ${symbol}. Check if backend is running and symbol is valid.`);
       }
     } catch (error: any) {
-      console.error(`❌ Erro ao buscar dados para ${symbol}:`, error);
+      console.error(`❌ Error fetching real data for ${symbol}:`, error);
       setCandleData([]);
       setHasError(true);
-      setErrorMessage(`Erro ao carregar dados: ${error.message}`);
+      setErrorMessage(`Error loading real data: ${error.message}`);
     }
     setIsLoading(false);
     setLastUpdate(Date.now());
   }, [symbol, timeframe, visibleCandles]);
 
-  // Processar dados de candles com indicadores
+  // Process real candles with indicators (no mock data)
   const processCandles = (rawCandles: any[]): CandleData[] => {
     const candles = rawCandles.map(k => ({
       timestamp: k.timestamp,
@@ -164,7 +154,7 @@ const BinanceStyleChart: React.FC<BinanceStyleChartProps> = ({
       candleColor: parseFloat(k.close) >= parseFloat(k.open) ? '#22c55e' : '#ef4444'
     }));
 
-    // Calcular indicadores
+    // Calculate indicators from real data
     return candles.map((candle, index) => {
       const closes = candles.slice(Math.max(0, index - 199), index + 1).map(c => c.close);
       const highs = candles.slice(Math.max(0, index - 199), index + 1).map(c => c.high);
@@ -190,7 +180,7 @@ const BinanceStyleChart: React.FC<BinanceStyleChartProps> = ({
     });
   };
 
-  // Funções de cálculo de indicadores
+  // Indicator calculation functions
   const calculateSMA = (prices: number[], period: number): number | undefined => {
     if (prices.length < period) return undefined;
     return prices.slice(-period).reduce((a, b) => a + b, 0) / period;
@@ -262,49 +252,60 @@ const BinanceStyleChart: React.FC<BinanceStyleChartProps> = ({
     return obv;
   };
 
-  // Manipulação de zoom com scroll
+  // Scroll wheel zoom handler
   const handleWheel = useCallback((event: WheelEvent) => {
     event.preventDefault();
     const delta = event.deltaY > 0 ? -10 : 10;
     setVisibleCandles(prev => Math.max(20, Math.min(500, prev + delta)));
   }, []);
 
-  // Componente customizado de candlestick
+  // Improved candlestick component - clearer visualization
   const CustomCandlestick = ({ payload, x, y, width, height }: any) => {
-    if (!payload) return null;
+    if (!payload || !payload.open || !payload.high || !payload.low || !payload.close) return null;
     
     const { open, high, low, close } = payload;
     const isGreen = close >= open;
     const color = isGreen ? '#22c55e' : '#ef4444';
     
-    const bodyTop = Math.max(open, close);
-    const bodyBottom = Math.min(open, close);
-    const bodyHeight = Math.abs(close - open);
+    // Calculate price range for proper scaling
+    const allPrices = candleData.flatMap(c => [c.high, c.low]);
+    const minPrice = Math.min(...allPrices);
+    const maxPrice = Math.max(...allPrices);
+    const priceRange = maxPrice - minPrice;
     
-    const priceSpread = priceRange[1] - priceRange[0];
-    const scale = height / priceSpread;
+    if (priceRange === 0) return null;
     
+    // Scale calculations
+    const scale = height / priceRange;
     const wickX = x + width / 2;
-    const bodyY = y + (priceRange[1] - bodyTop) * scale;
-    const wickTopY = y + (priceRange[1] - high) * scale;
-    const wickBottomY = y + (priceRange[1] - low) * scale;
-    const scaledBodyHeight = Math.max(2, bodyHeight * scale);
+    
+    // Y positions (inverted because SVG coordinates)
+    const highY = y + (maxPrice - high) * scale;
+    const lowY = y + (maxPrice - low) * scale;
+    const openY = y + (maxPrice - open) * scale;
+    const closeY = y + (maxPrice - close) * scale;
+    
+    const bodyTop = Math.min(openY, closeY);
+    const bodyHeight = Math.abs(closeY - openY);
+    const minBodyHeight = 2; // Minimum visible body height
     
     return (
       <g>
+        {/* Wick lines */}
         <line
           x1={wickX}
-          y1={wickTopY}
+          y1={highY}
           x2={wickX}
-          y2={wickBottomY}
+          y2={lowY}
           stroke={color}
           strokeWidth={1}
         />
+        {/* Candle body */}
         <rect
-          x={x + width * 0.1}
-          y={bodyY}
-          width={width * 0.8}
-          height={scaledBodyHeight}
+          x={x + width * 0.2}
+          y={bodyTop}
+          width={width * 0.6}
+          height={Math.max(minBodyHeight, bodyHeight)}
           fill={isGreen ? color : color}
           stroke={color}
           strokeWidth={1}
@@ -313,7 +314,7 @@ const BinanceStyleChart: React.FC<BinanceStyleChartProps> = ({
     );
   };
 
-  // Formatador de tempo baseado no timeframe
+  // Time formatter based on timeframe
   const formatTime = (timestamp: number) => {
     const date = new Date(timestamp);
     switch (timeframe) {
@@ -334,7 +335,7 @@ const BinanceStyleChart: React.FC<BinanceStyleChartProps> = ({
     }
   };
 
-  // Executar ordem
+  // Execute order
   const executeOrder = async () => {
     if (!orderPrice || !orderQuantity) return;
     
@@ -352,7 +353,7 @@ const BinanceStyleChart: React.FC<BinanceStyleChartProps> = ({
       setOrderPrice('');
       setOrderQuantity('');
     } catch (error) {
-      console.error('Erro ao executar ordem:', error);
+      console.error('Error executing order:', error);
     }
   };
 
@@ -381,9 +382,21 @@ const BinanceStyleChart: React.FC<BinanceStyleChartProps> = ({
   const chartHeight = isExpanded ? 800 : 600;
   const visibleData = candleData.slice(-visibleCandles);
 
+  // Calculate Y-axis domain for proper candle visibility
+  const yAxisDomain = useMemo(() => {
+    if (visibleData.length === 0) return ['dataMin', 'dataMax'];
+    
+    const prices = visibleData.flatMap(c => [c.high, c.low]);
+    const minPrice = Math.min(...prices);
+    const maxPrice = Math.max(...prices);
+    const padding = (maxPrice - minPrice) * 0.05; // 5% padding
+    
+    return [minPrice - padding, maxPrice + padding];
+  }, [visibleData]);
+
   return (
     <div className="w-full space-y-4">
-      {/* Header com controles */}
+      {/* Header with controls */}
       <div className="flex items-center justify-between bg-card border rounded-lg p-4">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
@@ -481,7 +494,7 @@ const BinanceStyleChart: React.FC<BinanceStyleChartProps> = ({
         </div>
       </div>
 
-      {/* Indicadores */}
+      {/* Indicators controls */}
       <div className="flex flex-wrap gap-2 px-4">
         {Object.entries(indicators).map(([key, config]) => (
           <div key={key} className="flex items-center gap-1">
@@ -500,7 +513,7 @@ const BinanceStyleChart: React.FC<BinanceStyleChartProps> = ({
         ))}
       </div>
 
-      {/* Painel de ordem */}
+      {/* Order panel */}
       {showOrderPanel && (
         <Card className="border-l-4 border-l-blue-500">
           <CardContent className="p-4">
@@ -545,21 +558,22 @@ const BinanceStyleChart: React.FC<BinanceStyleChartProps> = ({
         </Card>
       )}
 
-      {/* Gráfico principal */}
+      {/* Main chart */}
       <div ref={chartRef} className="bg-card border rounded-lg">
         {isLoading ? (
           <div className="flex items-center justify-center" style={{ height: chartHeight }}>
             <div className="flex items-center gap-2 text-muted-foreground">
               <RefreshCw className="h-5 w-5 animate-spin" />
-              Carregando...
+              Carregando dados reais...
             </div>
           </div>
         ) : hasError || candleData.length === 0 ? (
           <div className="flex flex-col items-center justify-center" style={{ height: chartHeight }}>
             <div className="text-center space-y-4">
               <div className="text-4xl">📊</div>
-              <h3 className="text-lg font-medium">Sem Dados</h3>
+              <h3 className="text-lg font-medium">Sem Dados Reais</h3>
               <p className="text-sm text-muted-foreground">{errorMessage}</p>
+              <p className="text-xs text-muted-foreground">Apenas dados reais são exibidos - sem simulações</p>
               <Button onClick={fetchCandleData} variant="outline">
                 Tentar Novamente
               </Button>
@@ -582,7 +596,7 @@ const BinanceStyleChart: React.FC<BinanceStyleChartProps> = ({
                   interval="preserveStartEnd"
                 />
                 <YAxis 
-                  domain={priceRange}
+                  domain={yAxisDomain}
                   axisLine={false}
                   tickLine={false}
                   tick={{ fontSize: 12 }}
@@ -621,7 +635,7 @@ const BinanceStyleChart: React.FC<BinanceStyleChartProps> = ({
                 {/* Candlesticks */}
                 <Bar dataKey="close" shape={<CustomCandlestick />} />
                 
-                {/* Indicadores ativos */}
+                {/* Active indicators */}
                 {indicators.sma20.enabled && (
                   <Line type="monotone" dataKey="sma20" stroke={indicators.sma20.color} strokeWidth={1} dot={false} />
                 )}
@@ -638,7 +652,7 @@ const BinanceStyleChart: React.FC<BinanceStyleChartProps> = ({
                   <Line type="monotone" dataKey="ema50" stroke={indicators.ema50.color} strokeWidth={1} dot={false} />
                 )}
                 
-                {/* Bandas de Bollinger */}
+                {/* Bollinger Bands */}
                 {indicators.bollinger.enabled && (
                   <>
                     <Line type="monotone" dataKey="bollingerUpper" stroke={indicators.bollinger.color} strokeWidth={1} strokeDasharray="3 3" dot={false} />
@@ -659,19 +673,17 @@ const BinanceStyleChart: React.FC<BinanceStyleChartProps> = ({
                   />
                 ))}
                 
-                {/* Preço atual */}
+                {/* Current price line */}
                 {marketData && marketData.lastPrice > 0 && (
                   <ReferenceLine
                     y={marketData.lastPrice}
                     stroke="#f59e0b"
                     strokeDasharray="3 3"
                     strokeWidth={2}
-                    label={{
-                      value: `${marketData.lastPrice >= 1 ? '$' + marketData.lastPrice.toFixed(2) : '$' + marketData.lastPrice.toFixed(6)}`,
-                      position: 'insideTopRight'
-                    }}
                   />
                 )}
+                
+                <Brush dataKey="time" height={30} />
               </ComposedChart>
             </ResponsiveContainer>
             
@@ -679,27 +691,29 @@ const BinanceStyleChart: React.FC<BinanceStyleChartProps> = ({
             {indicators.volume.enabled && (
               <ResponsiveContainer width="100%" height="10%">
                 <ComposedChart data={visibleData} margin={{ top: 0, right: 30, left: 20, bottom: 20 }}>
-                  <XAxis dataKey="timestamp" axisLine={false} tickLine={false} tick={false} />
+                  <XAxis dataKey="time" axisLine={false} tickLine={false} tick={false} />
                   <YAxis axisLine={false} tickLine={false} tick={false} />
-                  <Bar dataKey="volume" fill={indicators.volume.color} opacity={0.6} />
+                  <Bar dataKey="volume" fill="#6b7280" opacity={0.6} />
                 </ComposedChart>
               </ResponsiveContainer>
             )}
           </div>
         )}
         
-        {/* Stats footer */}
+        {/* Chart stats */}
         <div className="px-4 py-2 border-t bg-muted/20">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
             <div className="flex items-center gap-4">
               <span>Última atualização: {new Date(lastUpdate).toLocaleTimeString('pt-BR')}</span>
-              <span>Candles: {visibleData.length}/{candleData.length}</span>
-              <span>Zoom: {visibleCandles} velas</span>
-              {currentCandle?.rsi && <span>RSI: {currentCandle.rsi.toFixed(1)}</span>}
+              <span>Candles: {candleData.length}</span>
+              <span>🔴 APENAS DADOS REAIS</span>
+              {currentCandle?.rsi && (
+                <span>RSI: {currentCandle.rsi.toFixed(1)}</span>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <Activity className="h-3 w-3" />
-              <span>Tempo real • Use scroll para zoom</span>
+              <span>Tempo real</span>
             </div>
           </div>
         </div>

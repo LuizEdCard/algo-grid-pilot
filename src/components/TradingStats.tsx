@@ -1,4 +1,3 @@
-
 import {
   Card,
   CardContent,
@@ -6,6 +5,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { TradingStats as TradingStatsType } from "../types/trading";
+import { useEffect, useState } from "react";
+import { RealBinanceService } from "../services/realBinanceService";
 
 interface StatsCardProps {
   title: string;
@@ -35,15 +36,45 @@ interface TradingStatsProps {
 }
 
 const TradingStats = ({ symbol }: TradingStatsProps) => {
-  // Mock stats for the given symbol
-  const stats: TradingStatsType = {
-    totalPnL: 1250.50,
-    winRate: 67.5,
-    totalTrades: 145,
-    dailyPnL: [120, -45, 230, 180, -90, 210, 95],
-    drawdown: 8.2,
-    maxDrawdown: 12.5
-  };
+  const [stats, setStats] = useState<TradingStatsType>({
+    totalPnL: 0,
+    winRate: 0,
+    totalTrades: 0,
+    dailyPnL: [],
+    drawdown: 0,
+    maxDrawdown: 0
+  });
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchTradingStats = async () => {
+      try {
+        setIsLoading(true);
+        // Try to get real stats from bot status
+        const botStatus = await RealBinanceService.getBotStatus(symbol);
+        
+        if (botStatus) {
+          setStats({
+            totalPnL: botStatus.realized_pnl || 0,
+            winRate: 0, // Will be calculated from trade history
+            totalTrades: botStatus.total_trades || 0,
+            dailyPnL: [], // Will be fetched from trade executions
+            drawdown: 0,
+            maxDrawdown: 0
+          });
+        }
+      } catch (error) {
+        console.error('Failed to fetch trading stats:', error);
+        // Keep stats at zero if no real data available
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (symbol) {
+      fetchTradingStats();
+    }
+  }, [symbol]);
 
   const {
     totalPnL,
@@ -52,6 +83,23 @@ const TradingStats = ({ symbol }: TradingStatsProps) => {
     drawdown,
     maxDrawdown
   } = stats;
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Performance - {symbol}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="animate-pulse space-y-4">
+            <div className="h-20 bg-muted rounded"></div>
+            <div className="h-20 bg-muted rounded"></div>
+            <div className="h-20 bg-muted rounded"></div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card>

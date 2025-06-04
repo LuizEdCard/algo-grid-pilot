@@ -50,7 +50,7 @@ const Index = () => {
   const [rlStatus, setRLStatus] = useState<RLStatus | null>(null);
   const [indicatorData, setIndicatorData] = useState<IndicatorData[]>([]);
   
-  // Trading stats
+  // Trading stats - will be fetched from backend
   const [tradingStats, setTradingStats] = useState<TradingStatsType>({
     totalPnL: 0,
     winRate: 0,
@@ -630,7 +630,7 @@ const Index = () => {
             
             {/* Trading Statistics */}
             <div>
-              <TradingStats stats={tradingStats} />
+              <TradingStats symbol={selectedSymbol} />
             </div>
             
             {/* Order Book */}
