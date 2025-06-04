@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -29,7 +30,6 @@ const ImprovedIndex = () => {
   const [marketData, setMarketData] = useState<MarketData | undefined>();
   const [gridLevels, setGridLevels] = useState<GridLevel[]>([]);
   const [availablePairs, setAvailablePairs] = useState<MarketData[]>([]);
-  const [isChartExpanded, setIsChartExpanded] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [customPair, setCustomPair] = useState('');
   const [isTrading, setIsTrading] = useState(false);
@@ -176,41 +176,6 @@ const ImprovedIndex = () => {
     }, 3000);
   };
 
-  // If chart is expanded, show professional layout
-  if (isChartExpanded) {
-    return (
-      <div className="h-screen">
-        <ProfessionalChart
-          symbol={selectedSymbol}
-          gridLevels={gridLevels}
-          marketData={marketData}
-          onSymbolChange={handleSymbolChange}
-        />
-        
-        {/* Overlay controls */}
-        <div className="fixed top-4 left-4 z-10">
-          <Button 
-            onClick={() => setIsChartExpanded(false)}
-            variant="outline"
-            className="bg-gray-900/80 border-gray-700 text-white"
-          >
-            <Settings className="h-4 w-4 mr-2" />
-            Configurações
-          </Button>
-        </div>
-        
-        <div className="fixed top-4 right-4 z-10 flex items-center gap-2">
-          <BackendStatus />
-          <RLModelStatus 
-            rlState={rlState}
-            onTrainModel={handleTrainModel}
-          />
-        </div>
-      </div>
-    );
-  }
-
-  // Standard layout when not expanded
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto p-4 space-y-6">
@@ -228,23 +193,13 @@ const ImprovedIndex = () => {
           </div>
           
           <div className="flex items-center gap-4">
-            <Button 
-              onClick={() => setIsChartExpanded(true)}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              <BarChart3 className="h-4 w-4 mr-2" />
-              Gráfico Profissional
-            </Button>
             <BackendStatus />
-            <RLModelStatus 
-              rlState={rlState}
-              onTrainModel={handleTrainModel}
-            />
           </div>
         </div>
 
-        {/* Rest of the standard layout */}
+        {/* Main Content */}
         <div className="grid grid-cols-12 gap-6">
+          {/* Left Sidebar - Trading Config */}
           <div className="col-span-3 space-y-4">
             <ImprovedGridConfig
               symbol={selectedSymbol}
@@ -255,30 +210,33 @@ const ImprovedIndex = () => {
             <BalanceDisplay />
           </div>
 
+          {/* Center - Chart */}
           <div className="col-span-6">
-            <Card>
-              <CardContent className="p-6 text-center">
-                <h3 className="text-lg font-medium mb-2">Modo Gráfico Profissional</h3>
-                <p className="text-muted-foreground mb-4">
-                  Clique no botão "Gráfico Profissional" para acessar o layout completo
-                </p>
-                <Button 
-                  onClick={() => setIsChartExpanded(true)}
-                  className="bg-blue-600 hover:bg-blue-700"
-                >
-                  <BarChart3 className="h-4 w-4 mr-2" />
-                  Abrir Gráfico Completo
-                </Button>
-              </CardContent>
-            </Card>
+            <ProfessionalChart
+              symbol={selectedSymbol}
+              gridLevels={gridLevels}
+              marketData={marketData}
+              onSymbolChange={handleSymbolChange}
+            />
           </div>
 
+          {/* Right Sidebar - Pairs and Stats */}
           <div className="col-span-3 space-y-4">
             <RecommendedPairs
               onSelectPair={handleSymbolChange}
               currentSymbol={selectedSymbol}
             />
             <TradingStats symbol={selectedSymbol} />
+          </div>
+        </div>
+
+        {/* Bottom Section - RL Model (Lower Priority) */}
+        <div className="grid grid-cols-12 gap-6">
+          <div className="col-span-12">
+            <RLModelStatus 
+              rlState={rlState}
+              onTrainModel={handleTrainModel}
+            />
           </div>
         </div>
       </div>
