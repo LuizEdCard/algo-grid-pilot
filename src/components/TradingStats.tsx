@@ -31,10 +31,20 @@ const StatsCard = ({ title, value, change, description }: StatsCardProps) => (
 );
 
 interface TradingStatsProps {
-  stats: TradingStatsType;
+  symbol: string;
 }
 
-const TradingStats = ({ stats }: TradingStatsProps) => {
+const TradingStats = ({ symbol }: TradingStatsProps) => {
+  // Mock stats for the given symbol
+  const stats: TradingStatsType = {
+    totalPnL: 1250.50,
+    winRate: 67.5,
+    totalTrades: 145,
+    dailyPnL: [120, -45, 230, 180, -90, 210, 95],
+    drawdown: 8.2,
+    maxDrawdown: 12.5
+  };
+
   const {
     totalPnL,
     winRate,
@@ -46,10 +56,10 @@ const TradingStats = ({ stats }: TradingStatsProps) => {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Performance Metrics</CardTitle>
+        <CardTitle>Performance - {symbol}</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4">
           <StatsCard
             title="Total P&L"
             value={`$${totalPnL.toFixed(2)}`}

@@ -62,6 +62,7 @@ export interface Position {
 }
 
 export interface GridLevel {
+  id: string;
   price: number;
   side: 'BUY' | 'SELL';
   quantity: number;

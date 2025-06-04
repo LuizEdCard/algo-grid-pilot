@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,7 +22,7 @@ import RLModelStatus from '../components/RLModelStatus';
 
 // Services and Types
 import { RealBinanceService } from '../services/realBinanceService';
-import { MarketData, GridLevel } from '../types/trading';
+import { MarketData, GridLevel, RLState } from '../types/trading';
 
 const ImprovedIndex = () => {
   const [selectedSymbol, setSelectedSymbol] = useState('ADAUSDT');
@@ -35,6 +34,13 @@ const ImprovedIndex = () => {
   const [customPair, setCustomPair] = useState('');
   const [isTrading, setIsTrading] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
+  const [rlState, setRlState] = useState<RLState>({
+    currentModel: 'PPO-v2.1',
+    isTraining: false,
+    lastTrainingTime: Date.now() - 3600000, // 1 hour ago
+    performance: 0.78,
+    confidence: 0.85
+  });
 
   // Buscar pares disponíveis
   useEffect(() => {
@@ -152,6 +158,24 @@ const ImprovedIndex = () => {
     }
   };
 
+  const handleTrainModel = () => {
+    setRlState(prev => ({ ...prev, isTraining: true }));
+    // Simulate training
+    setTimeout(() => {
+      setRlState(prev => ({
+        ...prev,
+        isTraining: false,
+        lastTrainingTime: Date.now(),
+        performance: Math.min(0.95, prev.performance + 0.02),
+        confidence: Math.min(0.95, prev.confidence + 0.01)
+      }));
+      toast({
+        title: "Modelo retreinado",
+        description: "O modelo RL foi atualizado com sucesso"
+      });
+    }, 3000);
+  };
+
   const filteredPairs = availablePairs.filter(pair =>
     pair.symbol.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -174,7 +198,10 @@ const ImprovedIndex = () => {
           
           <div className="flex items-center gap-4">
             <BackendStatus />
-            <RLModelStatus />
+            <RLModelStatus 
+              rlState={rlState}
+              onTrainModel={handleTrainModel}
+            />
           </div>
         </div>
 
