@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid,
@@ -177,6 +176,23 @@ const ProfessionalChart: React.FC<ProfessionalChartProps> = ({
           strokeWidth={1}
         />
       </g>
+    );
+  };
+
+  // Custom volume bar component
+  const VolumeBar = ({ payload, x, y, width, height }: any) => {
+    if (!payload) return null;
+    const color = payload.candleType === 'bullish' ? '#26a69a' : '#ef5350';
+    
+    return (
+      <rect
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        fill={color}
+        opacity={0.7}
+      />
     );
   };
 
@@ -377,8 +393,7 @@ const ProfessionalChart: React.FC<ProfessionalChartProps> = ({
                   <YAxis axisLine={false} tickLine={false} tick={false} />
                   <Bar 
                     dataKey="volume" 
-                    fill={(entry: any) => entry.candleType === 'bullish' ? '#26a69a' : '#ef5350'}
-                    opacity={0.7} 
+                    shape={<VolumeBar />}
                   />
                 </ComposedChart>
               </ResponsiveContainer>
