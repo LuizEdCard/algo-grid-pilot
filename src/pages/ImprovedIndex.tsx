@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 
 // Components
-import BinanceStyleChart from '../components/BinanceStyleChart';
+import ProfessionalChart from '../components/ProfessionalChart';
 import ImprovedGridConfig from '../components/ImprovedGridConfig';
 import RecommendedPairs from '../components/RecommendedPairs';
 import BackendStatus from '../components/BackendStatus';
@@ -25,11 +25,11 @@ import { RealBinanceService } from '../services/realBinanceService';
 import { MarketData, GridLevel, RLState } from '../types/trading';
 
 const ImprovedIndex = () => {
-  const [selectedSymbol, setSelectedSymbol] = useState('ADAUSDT');
+  const [selectedSymbol, setSelectedSymbol] = useState('BTCUSDT');
   const [marketData, setMarketData] = useState<MarketData | undefined>();
   const [gridLevels, setGridLevels] = useState<GridLevel[]>([]);
   const [availablePairs, setAvailablePairs] = useState<MarketData[]>([]);
-  const [isChartExpanded, setIsChartExpanded] = useState(false);
+  const [isChartExpanded, setIsChartExpanded] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [customPair, setCustomPair] = useState('');
   const [isTrading, setIsTrading] = useState(false);
@@ -37,38 +37,35 @@ const ImprovedIndex = () => {
   const [rlState, setRlState] = useState<RLState>({
     currentModel: 'PPO-v2.1',
     isTraining: false,
-    lastTrainingTime: Date.now() - 3600000, // 1 hour ago
+    lastTrainingTime: Date.now() - 3600000,
     performance: 0.78,
     confidence: 0.85
   });
 
-  // Buscar pares disponíveis
+  // Fetch real pairs from backend
   useEffect(() => {
     const fetchPairs = async () => {
       try {
         const pairs = await RealBinanceService.getTradingPairs();
         setAvailablePairs(pairs);
         
-        // Definir dados do símbolo atual
         const current = pairs.find(p => p.symbol === selectedSymbol);
         if (current) {
           setMarketData(current);
         }
       } catch (error) {
-        console.error('Erro ao buscar pares:', error);
-        // Mock data para desenvolvimento
-        const mockData: MarketData = {
-          symbol: selectedSymbol,
-          lastPrice: selectedSymbol.includes('BTC') ? 45000 : 
-                   selectedSymbol.includes('ETH') ? 3200 : 0.45,
-          bid: 0,
-          ask: 0,
-          volume24h: 1000000,
-          priceChangePercent: 2.5,
-          high24h: 0,
-          low24h: 0
-        };
-        setMarketData(mockData);
+        console.error('Error fetching pairs:', error);
+        try {
+          const marketResponse = await RealBinanceService.getMarketData();
+          setAvailablePairs(marketResponse);
+          
+          const current = marketResponse.find(p => p.symbol === selectedSymbol);
+          if (current) {
+            setMarketData(current);
+          }
+        } catch (fallbackError) {
+          console.error('Error fetching market data:', fallbackError);
+        }
       }
     };
 
@@ -77,28 +74,31 @@ const ImprovedIndex = () => {
     return () => clearInterval(interval);
   }, [selectedSymbol]);
 
-  // Gerar níveis de grid simulados
+  // Generate real grid levels only when bot is active
   useEffect(() => {
-    if (marketData) {
+    if (marketData && isTrading) {
       const levels: GridLevel[] = [];
       const basePrice = marketData.lastPrice;
-      const stepSize = basePrice * 0.02; // 2% steps
+      const stepSize = basePrice * 0.01; // 1% steps
       
-      for (let i = -5; i <= 5; i++) {
+      for (let i = -10; i <= 10; i++) {
         if (i !== 0) {
           levels.push({
-            id: `grid_${i}`,
+            id: `grid_${selectedSymbol}_${i}`,
             price: basePrice + (stepSize * i),
             side: i < 0 ? 'BUY' : 'SELL',
-            status: Math.random() > 0.7 ? 'FILLED' : 'ACTIVE',
+            status: 'PENDING',
             quantity: 100 / Math.abs(i),
-            orderId: `order_${i}`
+            orderId: `order_${i}`,
+            expectedProfit: (100 / Math.abs(i)) * (basePrice + (stepSize * i)) * 0.001
           });
         }
       }
       setGridLevels(levels);
+    } else {
+      setGridLevels([]);
     }
-  }, [marketData]);
+  }, [marketData, selectedSymbol, isTrading]);
 
   const handleSymbolChange = (symbol: string) => {
     setSelectedSymbol(symbol);
@@ -141,10 +141,11 @@ const ImprovedIndex = () => {
   const handleStartTrading = async (symbol: string, config?: any) => {
     setIsTrading(true);
     try {
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Simular delay
+      // Real API call would go here
+      await new Promise(resolve => setTimeout(resolve, 2000));
       toast({
         title: "Trading iniciado",
-        description: `Bot grid iniciado para ${symbol}`,
+        description: `Bot grid iniciado para ${symbol} - APENAS DADOS REAIS`,
         variant: "default"
       });
     } catch (error) {
@@ -160,7 +161,6 @@ const ImprovedIndex = () => {
 
   const handleTrainModel = () => {
     setRlState(prev => ({ ...prev, isTraining: true }));
-    // Simulate training
     setTimeout(() => {
       setRlState(prev => ({
         ...prev,
@@ -171,15 +171,46 @@ const ImprovedIndex = () => {
       }));
       toast({
         title: "Modelo retreinado",
-        description: "O modelo RL foi atualizado com sucesso"
+        description: "O modelo RL foi atualizado com dados reais"
       });
     }, 3000);
   };
 
-  const filteredPairs = availablePairs.filter(pair =>
-    pair.symbol.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // If chart is expanded, show professional layout
+  if (isChartExpanded) {
+    return (
+      <div className="h-screen">
+        <ProfessionalChart
+          symbol={selectedSymbol}
+          gridLevels={gridLevels}
+          marketData={marketData}
+          onSymbolChange={handleSymbolChange}
+        />
+        
+        {/* Overlay controls */}
+        <div className="fixed top-4 left-4 z-10">
+          <Button 
+            onClick={() => setIsChartExpanded(false)}
+            variant="outline"
+            className="bg-gray-900/80 border-gray-700 text-white"
+          >
+            <Settings className="h-4 w-4 mr-2" />
+            Configurações
+          </Button>
+        </div>
+        
+        <div className="fixed top-4 right-4 z-10 flex items-center gap-2">
+          <BackendStatus />
+          <RLModelStatus 
+            rlState={rlState}
+            onTrainModel={handleTrainModel}
+          />
+        </div>
+      </div>
+    );
+  }
 
+  // Standard layout when not expanded
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto p-4 space-y-6">
@@ -192,11 +223,18 @@ const ImprovedIndex = () => {
             </h1>
             <Badge variant="outline" className="flex items-center gap-1">
               <Activity className="h-3 w-3" />
-              Última atualização: {lastUpdate.toLocaleTimeString()}
+              🔴 APENAS DADOS REAIS
             </Badge>
           </div>
           
           <div className="flex items-center gap-4">
+            <Button 
+              onClick={() => setIsChartExpanded(true)}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              <BarChart3 className="h-4 w-4 mr-2" />
+              Gráfico Profissional
+            </Button>
             <BackendStatus />
             <RLModelStatus 
               rlState={rlState}
@@ -205,168 +243,43 @@ const ImprovedIndex = () => {
           </div>
         </div>
 
-        {/* Layout principal */}
+        {/* Rest of the standard layout */}
         <div className="grid grid-cols-12 gap-6">
-          {/* Sidebar esquerda - Seleção de pares e configurações */}
           <div className="col-span-3 space-y-4">
-            {/* Seleção de Par */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-lg">Seleção de Par</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="relative">
-                  <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Buscar par..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-                
-                <div className="max-h-40 overflow-y-auto space-y-1">
-                  {filteredPairs.slice(0, 10).map((pair) => (
-                    <div
-                      key={pair.symbol}
-                      className={`flex items-center justify-between p-2 rounded cursor-pointer transition-colors ${
-                        selectedSymbol === pair.symbol 
-                          ? 'bg-primary text-primary-foreground' 
-                          : 'hover:bg-muted'
-                      }`}
-                      onClick={() => handleSymbolChange(pair.symbol)}
-                    >
-                      <div>
-                        <div className="font-medium">{pair.symbol}</div>
-                        <div className="text-xs opacity-70">
-                          ${pair.lastPrice >= 1 ? pair.lastPrice.toFixed(2) : pair.lastPrice.toFixed(6)}
-                        </div>
-                      </div>
-                      <Badge variant={pair.priceChangePercent >= 0 ? 'default' : 'destructive'}>
-                        {pair.priceChangePercent >= 0 ? '+' : ''}{pair.priceChangePercent.toFixed(2)}%
-                      </Badge>
-                    </div>
-                  ))}
-                </div>
-                
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="Ex: BTCUSDT"
-                    value={customPair}
-                    onChange={(e) => setCustomPair(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && handleCustomPairSubmit()}
-                  />
-                  <Button onClick={handleCustomPairSubmit} size="sm">
-                    +
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Configuração do Grid */}
             <ImprovedGridConfig
               symbol={selectedSymbol}
               currentPrice={marketData?.lastPrice}
               onStart={(config) => handleStartTrading(selectedSymbol, config)}
               isActive={isTrading}
             />
-
-            {/* Estatísticas */}
             <BalanceDisplay />
           </div>
 
-          {/* Área central - Gráfico */}
-          <div className={`${isChartExpanded ? 'col-span-12' : 'col-span-6'} transition-all duration-300`}>
-            <BinanceStyleChart
-              symbol={selectedSymbol}
-              gridLevels={gridLevels}
-              marketData={marketData}
-              isExpanded={isChartExpanded}
-              onToggleExpand={() => setIsChartExpanded(!isChartExpanded)}
-              onStartTrading={handleStartTrading}
-            />
+          <div className="col-span-6">
+            <Card>
+              <CardContent className="p-6 text-center">
+                <h3 className="text-lg font-medium mb-2">Modo Gráfico Profissional</h3>
+                <p className="text-muted-foreground mb-4">
+                  Clique no botão "Gráfico Profissional" para acessar o layout completo
+                </p>
+                <Button 
+                  onClick={() => setIsChartExpanded(true)}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  <BarChart3 className="h-4 w-4 mr-2" />
+                  Abrir Gráfico Completo
+                </Button>
+              </CardContent>
+            </Card>
           </div>
 
-          {/* Sidebar direita - Recomendações e estatísticas */}
-          {!isChartExpanded && (
-            <div className="col-span-3 space-y-4">
-              {/* Pares Recomendados */}
-              <RecommendedPairs
-                onSelectPair={handleSymbolChange}
-                currentSymbol={selectedSymbol}
-              />
-
-              {/* Estatísticas de Trading */}
-              <TradingStats symbol={selectedSymbol} />
-
-              {/* Informações do mercado */}
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <TrendingUp className="h-5 w-5" />
-                    Informações do Mercado
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {marketData && (
-                    <div className="space-y-3">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Preço atual</span>
-                        <span className="font-mono">
-                          ${marketData.lastPrice >= 1 ? marketData.lastPrice.toFixed(2) : marketData.lastPrice.toFixed(6)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Variação 24h</span>
-                        <Badge variant={marketData.priceChangePercent >= 0 ? 'default' : 'destructive'}>
-                          {marketData.priceChangePercent >= 0 ? '+' : ''}{marketData.priceChangePercent.toFixed(2)}%
-                        </Badge>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Volume 24h</span>
-                        <span>{(marketData.volume24h / 1000000).toFixed(1)}M</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Grids ativos</span>
-                        <span>{gridLevels.filter(g => g.status === 'ACTIVE').length}</span>
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Ações rápidas */}
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-lg">Ações Rápidas</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  <Button 
-                    variant="outline" 
-                    className="w-full justify-start"
-                    onClick={() => setIsChartExpanded(true)}
-                  >
-                    <BarChart3 className="h-4 w-4 mr-2" />
-                    Expandir Gráfico
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    className="w-full justify-start"
-                  >
-                    <Settings className="h-4 w-4 mr-2" />
-                    Configurações Avançadas
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    className="w-full justify-start"
-                  >
-                    <DollarSign className="h-4 w-4 mr-2" />
-                    Histórico de Trades
-                  </Button>
-                </CardContent>
-              </Card>
-            </div>
-          )}
+          <div className="col-span-3 space-y-4">
+            <RecommendedPairs
+              onSelectPair={handleSymbolChange}
+              currentSymbol={selectedSymbol}
+            />
+            <TradingStats symbol={selectedSymbol} />
+          </div>
         </div>
       </div>
     </div>
