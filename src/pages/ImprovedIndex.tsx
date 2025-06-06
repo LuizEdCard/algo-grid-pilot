@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,7 +12,6 @@ import {
 } from 'lucide-react';
 
 // Components
-import ProfessionalChart from '../components/ProfessionalChart';
 import ImprovedGridConfig from '../components/ImprovedGridConfig';
 import RecommendedPairs from '../components/RecommendedPairs';
 import BackendStatus from '../components/BackendStatus';
@@ -197,10 +195,10 @@ const ImprovedIndex = () => {
           </div>
         </div>
 
-        {/* Main Content */}
+        {/* Main Content - Reorganized without chart */}
         <div className="grid grid-cols-12 gap-6">
-          {/* Left Sidebar - Trading Config */}
-          <div className="col-span-3 space-y-4">
+          {/* Left Side - Trading Config */}
+          <div className="col-span-4 space-y-4">
             <ImprovedGridConfig
               symbol={selectedSymbol}
               currentPrice={marketData?.lastPrice}
@@ -210,27 +208,19 @@ const ImprovedIndex = () => {
             <BalanceDisplay />
           </div>
 
-          {/* Center - Chart */}
-          <div className="col-span-6">
-            <ProfessionalChart
-              symbol={selectedSymbol}
-              gridLevels={gridLevels}
-              marketData={marketData}
-              onSymbolChange={handleSymbolChange}
-            />
-          </div>
-
-          {/* Right Sidebar - Pairs and Stats */}
-          <div className="col-span-3 space-y-4">
-            <RecommendedPairs
-              onSelectPair={handleSymbolChange}
-              currentSymbol={selectedSymbol}
-            />
-            <TradingStats symbol={selectedSymbol} />
+          {/* Right Side - Pairs and Stats */}
+          <div className="col-span-8 space-y-4">
+            <div className="grid grid-cols-2 gap-6">
+              <RecommendedPairs
+                onSelectPair={handleSymbolChange}
+                currentSymbol={selectedSymbol}
+              />
+              <TradingStats symbol={selectedSymbol} />
+            </div>
           </div>
         </div>
 
-        {/* Bottom Section - RL Model (Lower Priority) */}
+        {/* Bottom Section - RL Model */}
         <div className="grid grid-cols-12 gap-6">
           <div className="col-span-12">
             <RLModelStatus 
