@@ -66,13 +66,21 @@ const MarketTab: React.FC<MarketTabProps> = ({
                     onClick={() => onSymbolChange(pair.symbol)}
                   >
                     <td className="p-2 font-medium">{pair.symbol}</td>
-                    <td className="p-2 text-right">${pair.lastPrice.toFixed(2)}</td>
-                    <td className={`p-2 text-right ${pair.priceChangePercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {pair.priceChangePercent >= 0 ? '+' : ''}{pair.priceChangePercent.toFixed(2)}%
+                    <td className="p-2 text-right">
+                      ${pair.lastPrice ? pair.lastPrice.toFixed(2) : '0.00'}
                     </td>
-                    <td className="p-2 text-right">{(pair.volume / 1000000).toFixed(2)}M</td>
-                    <td className="p-2 text-right text-green-600">${pair.highPrice.toFixed(2)}</td>
-                    <td className="p-2 text-right text-red-600">${pair.lowPrice.toFixed(2)}</td>
+                    <td className={`p-2 text-right ${(pair.priceChangePercent || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {(pair.priceChangePercent || 0) >= 0 ? '+' : ''}{(pair.priceChangePercent || 0).toFixed(2)}%
+                    </td>
+                    <td className="p-2 text-right">
+                      {pair.volume24h ? (pair.volume24h / 1000000).toFixed(2) : '0.00'}M
+                    </td>
+                    <td className="p-2 text-right text-green-600">
+                      ${pair.high24h ? pair.high24h.toFixed(2) : '0.00'}
+                    </td>
+                    <td className="p-2 text-right text-red-600">
+                      ${pair.low24h ? pair.low24h.toFixed(2) : '0.00'}
+                    </td>
                   </tr>
                 ))}
               </tbody>
