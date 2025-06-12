@@ -1,23 +1,25 @@
+
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/hooks/use-toast";
 import { 
-  TrendingUp, Search, Star, BarChart3, 
-  Settings, Activity, DollarSign, Play 
+  TrendingUp, BarChart3, Settings, Activity, 
+  DollarSign, Brain, Target, Globe
 } from 'lucide-react';
 
+// Tab Components
+import TradingTab from '../components/tabs/TradingTab';
+import MarketTab from '../components/tabs/MarketTab';
+import ChartTab from '../components/tabs/ChartTab';
+import AnalysisTab from '../components/tabs/AnalysisTab';
+import PerformanceTab from '../components/tabs/PerformanceTab';
+import RLModelTab from '../components/tabs/RLModelTab';
+
 // Components
-import ImprovedGridConfig from '../components/ImprovedGridConfig';
-import RecommendedPairs from '../components/RecommendedPairs';
 import BackendStatus from '../components/BackendStatus';
-import TradingStats from '../components/TradingStats';
-import BalanceDisplay from '../components/BalanceDisplay';
-import RLModelStatus from '../components/RLModelStatus';
 
 // Services and Types
 import { RealBinanceService } from '../services/realBinanceService';
@@ -28,10 +30,9 @@ const ImprovedIndex = () => {
   const [marketData, setMarketData] = useState<MarketData | undefined>();
   const [gridLevels, setGridLevels] = useState<GridLevel[]>([]);
   const [availablePairs, setAvailablePairs] = useState<MarketData[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [customPair, setCustomPair] = useState('');
   const [isTrading, setIsTrading] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
+  const [activeTab, setActiveTab] = useState('trading');
   const [rlState, setRlState] = useState<RLState>({
     currentModel: 'PPO-v2.1',
     isTraining: false,
@@ -106,44 +107,13 @@ const ImprovedIndex = () => {
     });
   };
 
-  const handleCustomPairSubmit = async () => {
-    if (!customPair) return;
-    
-    const formattedPair = customPair.toUpperCase();
-    
-    try {
-      const isValid = await RealBinanceService.validateCustomPair(formattedPair, 'spot');
-      if (isValid) {
-        setSelectedSymbol(formattedPair);
-        setCustomPair('');
-        toast({
-          title: "Par customizado adicionado",
-          description: `${formattedPair} foi adicionado com sucesso`
-        });
-      } else {
-        toast({
-          title: "Par inválido",
-          description: `${formattedPair} não foi encontrado`,
-          variant: "destructive"
-        });
-      }
-    } catch (error) {
-      toast({
-        title: "Erro ao validar par",
-        description: "Verifique a conexão com o backend",
-        variant: "destructive"
-      });
-    }
-  };
-
   const handleStartTrading = async (symbol: string, config?: any) => {
     setIsTrading(true);
     try {
-      // Real API call would go here
       await new Promise(resolve => setTimeout(resolve, 2000));
       toast({
         title: "Trading iniciado",
-        description: `Bot grid iniciado para ${symbol} - APENAS DADOS REAIS`,
+        description: `Bot grid iniciado para ${symbol}`,
         variant: "default"
       });
     } catch (error) {
@@ -184,10 +154,6 @@ const ImprovedIndex = () => {
               <BarChart3 className="h-8 w-8" />
               Grid Trading Bot
             </h1>
-            <Badge variant="outline" className="flex items-center gap-1">
-              <Activity className="h-3 w-3" />
-              🔴 APENAS DADOS REAIS
-            </Badge>
           </div>
           
           <div className="flex items-center gap-4">
@@ -195,40 +161,85 @@ const ImprovedIndex = () => {
           </div>
         </div>
 
-        {/* Main Content - Reorganized without chart */}
-        <div className="grid grid-cols-12 gap-6">
-          {/* Left Side - Trading Config */}
-          <div className="col-span-4 space-y-4">
-            <ImprovedGridConfig
-              symbol={selectedSymbol}
-              currentPrice={marketData?.lastPrice}
-              onStart={(config) => handleStartTrading(selectedSymbol, config)}
-              isActive={isTrading}
+        {/* Tabs System */}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid w-full grid-cols-6">
+            <TabsTrigger value="trading" className="flex items-center gap-2">
+              <Target className="h-4 w-4" />
+              Trading
+            </TabsTrigger>
+            <TabsTrigger value="market" className="flex items-center gap-2">
+              <Globe className="h-4 w-4" />
+              Mercado
+            </TabsTrigger>
+            <TabsTrigger value="charts" className="flex items-center gap-2">
+              <BarChart3 className="h-4 w-4" />
+              Gráficos
+            </TabsTrigger>
+            <TabsTrigger value="analysis" className="flex items-center gap-2">
+              <TrendingUp className="h-4 w-4" />
+              Análise
+            </TabsTrigger>
+            <TabsTrigger value="performance" className="flex items-center gap-2">
+              <DollarSign className="h-4 w-4" />
+              Performance
+            </TabsTrigger>
+            <TabsTrigger value="rl-model" className="flex items-center gap-2">
+              <Brain className="h-4 w-4" />
+              RL Model
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="trading" className="mt-6">
+            <TradingTab
+              selectedSymbol={selectedSymbol}
+              marketData={marketData}
+              isTrading={isTrading}
+              onStartTrading={handleStartTrading}
+              onSymbolChange={handleSymbolChange}
             />
-            <BalanceDisplay />
-          </div>
+          </TabsContent>
 
-          {/* Right Side - Pairs and Stats */}
-          <div className="col-span-8 space-y-4">
-            <div className="grid grid-cols-2 gap-6">
-              <RecommendedPairs
-                onSelectPair={handleSymbolChange}
-                currentSymbol={selectedSymbol}
-              />
-              <TradingStats symbol={selectedSymbol} />
-            </div>
-          </div>
-        </div>
+          <TabsContent value="market" className="mt-6">
+            <MarketTab
+              availablePairs={availablePairs}
+              selectedSymbol={selectedSymbol}
+              onSymbolChange={handleSymbolChange}
+              lastUpdate={lastUpdate}
+            />
+          </TabsContent>
 
-        {/* Bottom Section - RL Model */}
-        <div className="grid grid-cols-12 gap-6">
-          <div className="col-span-12">
-            <RLModelStatus 
+          <TabsContent value="charts" className="mt-6">
+            <ChartTab
+              selectedSymbol={selectedSymbol}
+              gridLevels={gridLevels}
+              marketData={marketData}
+              onSymbolChange={handleSymbolChange}
+            />
+          </TabsContent>
+
+          <TabsContent value="analysis" className="mt-6">
+            <AnalysisTab
+              selectedSymbol={selectedSymbol}
+              marketData={marketData}
+            />
+          </TabsContent>
+
+          <TabsContent value="performance" className="mt-6">
+            <PerformanceTab
+              selectedSymbol={selectedSymbol}
+              gridLevels={gridLevels}
+              isTrading={isTrading}
+            />
+          </TabsContent>
+
+          <TabsContent value="rl-model" className="mt-6">
+            <RLModelTab
               rlState={rlState}
               onTrainModel={handleTrainModel}
             />
-          </div>
-        </div>
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );
