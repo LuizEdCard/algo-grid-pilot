@@ -1,7 +1,7 @@
 
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { RealBinanceService } from '../services/realBinanceService';
+import RealFlaskApiService from '../services/realApiService';
 
 const BackendStatus = () => {
   const [status, setStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
@@ -9,7 +9,7 @@ const BackendStatus = () => {
 
   const checkBackendStatus = async () => {
     try {
-      await RealBinanceService.checkStatus();
+      await RealFlaskApiService.checkStatus();
       setStatus('connected');
     } catch (error) {
       console.error('Backend connection failed:', error);
@@ -58,7 +58,7 @@ const BackendStatus = () => {
         </div>
         {status === 'error' && (
           <div className="text-xs text-red-400 mt-1">
-            Make sure Python backend is running on the configured port
+            Make sure Flask backend is running on http://localhost:5000
           </div>
         )}
       </CardContent>

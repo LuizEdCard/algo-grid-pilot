@@ -38,7 +38,7 @@ api.interceptors.response.use(
 );
 
 // Real API Service para Flask Backend
-export const RealFlaskApiService = {
+const RealFlaskApiService = {
   // ===== SYSTEM STATUS =====
   getSystemStatus: async () => {
     const response = await api.get('/api/status');
@@ -230,7 +230,18 @@ export const RealFlaskApiService = {
       unrealizedPnl: pair.unrealized_pnl,
       openOrders: pair.open_orders
     }));
+  },
+
+  // Método para verificar se o backend está respondendo
+  checkStatus: async () => {
+    try {
+      const response = await api.get('/api/status', { timeout: 5000 });
+      return response.data;
+    } catch (error) {
+      throw new Error(`Backend não está respondendo: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+    }
   }
 };
 
 export default RealFlaskApiService;
+export { RealFlaskApiService };

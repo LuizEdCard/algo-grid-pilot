@@ -39,24 +39,75 @@ const ImprovedIndex = () => {
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [activeTab, setActiveTab] = useState('trading');
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [backendAvailable, setBackendAvailable] = useState(false);
 
   console.log('[ImprovedIndex] State initialized, activeTab:', activeTab);
 
-  // Fetch real pairs from Flask API
+  // Dados de fallback para quando o backend não estiver disponível
+  const createFallbackData = (): MarketData[] => {
+    return [
+      {
+        symbol: 'BTCUSDT',
+        lastPrice: 67250.50,
+        bid: 67200.00,
+        ask: 67300.00,
+        volume24h: 1250000000.00,
+        priceChangePercent: 2.45,
+        high24h: 68000.00,
+        low24h: 66500.00
+      },
+      {
+        symbol: 'ETHUSDT',
+        lastPrice: 3245.75,
+        bid: 3240.00,
+        ask: 3250.00,
+        volume24h: 850000000.00,
+        priceChangePercent: -1.20,
+        high24h: 3290.00,
+        low24h: 3200.00
+      },
+      {
+        symbol: 'BNBUSDT',
+        lastPrice: 635.80,
+        bid: 635.50,
+        ask: 636.10,
+        volume24h: 45000000.00,
+        priceChangePercent: 0.85,
+        high24h: 640.00,
+        low24h: 630.00
+      },
+      {
+        symbol: 'ADAUSDT',
+        lastPrice: 0.6290,
+        bid: 0.6285,
+        ask: 0.6295,
+        volume24h: 120000000.00,
+        priceChangePercent: 1.50,
+        high24h: 0.6350,
+        low24h: 0.6200
+      }
+    ];
+  };
+
+  // Verificar disponibilidade do backend e buscar dados
   useEffect(() => {
     console.log('[ImprovedIndex] useEffect triggered for data fetching');
     
-    const fetchPairs = async () => {
+    const fetchData = async () => {
       try {
         setLoading(true);
-        setError(null);
-        console.log('[ImprovedIndex] Buscando dados de mercado...');
+        console.log('[ImprovedIndex] Verificando backend...');
         
+        // Tentar verificar se o backend está disponível
+        await RealFlaskApiService.checkStatus();
+        console.log('[ImprovedIndex] Backend disponível');
+        setBackendAvailable(true);
+        
+        // Buscar dados reais do mercado
         const marketResponse = await RealFlaskApiService.getMarketData(100);
         console.log('[ImprovedIndex] Market data response:', marketResponse);
         
-        if (marketResponse?.tickers) {
+        if (marketResponse?.tickers && marketResponse.tickers.length > 0) {
           const convertedPairs = RealFlaskApiService.convertMarketData(marketResponse);
           console.log('[ImprovedIndex] Converted pairs:', convertedPairs.length, 'pairs');
           
@@ -67,40 +118,25 @@ const ImprovedIndex = () => {
             setMarketData(current);
             console.log('[ImprovedIndex] Set current market data for:', selectedSymbol);
           }
-          
-          setLastUpdate(new Date());
         } else {
-          console.warn('[ImprovedIndex] No tickers in response');
-          setError('Nenhum dado de mercado recebido');
-        }
-      } catch (error) {
-        console.error('[ImprovedIndex] Erro ao buscar dados de mercado:', error);
-        setError(`Erro ao carregar dados: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
-        
-        // Fallback data for testing
-        const fallbackData: MarketData[] = [
-          {
-            symbol: 'BTCUSDT',
-            lastPrice: 67250.50,
-            bid: 67200.00,
-            ask: 67300.00,
-            volume24h: 1250000000.00,
-            priceChangePercent: 2.45,
-            high24h: 68000.00,
-            low24h: 66500.00
-          },
-          {
-            symbol: 'ETHUSDT',
-            lastPrice: 3245.75,
-            bid: 3240.00,
-            ask: 3250.00,
-            volume24h: 850000000.00,
-            priceChangePercent: -1.20,
-            high24h: 3290.00,
-            low24h: 3200.00
+          console.log('[ImprovedIndex] Usando dados de fallback (resposta vazia)');
+          const fallbackData = createFallbackData();
+          setAvailablePairs(fallbackData);
+          const current = fallbackData.find(p => p.symbol === selectedSymbol);
+          if (current) {
+            setMarketData(current);
           }
-        ];
+        }
         
+        setLastUpdate(new Date());
+        
+      } catch (error) {
+        console.error('[ImprovedIndex] Erro ao conectar com backend:', error);
+        setBackendAvailable(false);
+        
+        // Usar dados de fallback
+        console.log('[ImprovedIndex] Usando dados de fallback (erro de conexão)');
+        const fallbackData = createFallbackData();
         setAvailablePairs(fallbackData);
         const current = fallbackData.find(p => p.symbol === selectedSymbol);
         if (current) {
@@ -108,8 +144,8 @@ const ImprovedIndex = () => {
         }
         
         toast({
-          title: "Dados Simulados",
-          description: "Usando dados simulados devido à falha na conexão",
+          title: "Modo Offline",
+          description: "Backend indisponível. Usando dados de demonstração.",
           variant: "default"
         });
       } finally {
@@ -117,10 +153,17 @@ const ImprovedIndex = () => {
       }
     };
 
-    fetchPairs();
-    const interval = setInterval(fetchPairs, 30000);
+    fetchData();
+    
+    // Atualizar dados a cada 30 segundos se o backend estiver disponível
+    const interval = setInterval(() => {
+      if (backendAvailable) {
+        fetchData();
+      }
+    }, 30000);
+    
     return () => clearInterval(interval);
-  }, [selectedSymbol]);
+  }, [selectedSymbol, backendAvailable]);
 
   // Generate grid levels based on current price and trading status
   useEffect(() => {
@@ -168,61 +211,71 @@ const ImprovedIndex = () => {
     try {
       console.log('[ImprovedIndex] Adicionando par customizado:', symbol);
       
-      // Buscar dados atualizados do mercado
-      const marketResponse = await RealFlaskApiService.getMarketData();
-      const existingPair = marketResponse?.tickers?.find((t: any) => t.symbol === symbol);
-      
-      if (existingPair) {
-        // Converter e adicionar o par
-        const convertedPair = {
-          symbol: existingPair.symbol,
-          lastPrice: parseFloat(existingPair.price),
-          bid: parseFloat(existingPair.price) * 0.9999,
-          ask: parseFloat(existingPair.price) * 1.0001,
-          volume24h: parseFloat(existingPair.volume_24h),
-          priceChangePercent: parseFloat(existingPair.change_24h.replace('%', '')),
-          high24h: parseFloat(existingPair.high_24h),
-          low24h: parseFloat(existingPair.low_24h)
-        };
+      if (backendAvailable) {
+        // Buscar dados atualizados do mercado
+        const marketResponse = await RealFlaskApiService.getMarketData();
+        const existingPair = marketResponse?.tickers?.find((t: any) => t.symbol === symbol);
         
-        setAvailablePairs(prev => {
-          const filtered = prev.filter(p => p.symbol !== symbol);
-          return [...filtered, convertedPair];
-        });
-        
-        toast({
-          title: "Par adicionado",
-          description: `${symbol} foi adicionado à lista de pares disponíveis`
-        });
-      } else {
-        // Se não existe nos dados do mercado, criar um par básico
-        const newPair: MarketData = {
-          symbol,
-          lastPrice: 0,
-          bid: 0,
-          ask: 0,
-          volume24h: 0,
-          priceChangePercent: 0,
-          high24h: 0,
-          low24h: 0
-        };
-        
-        setAvailablePairs(prev => {
-          const filtered = prev.filter(p => p.symbol !== symbol);
-          return [...filtered, newPair];
-        });
-        
-        toast({
-          title: "Par adicionado (básico)",
-          description: `${symbol} foi adicionado mas sem dados de mercado`,
-          variant: "default"
-        });
+        if (existingPair) {
+          // Converter e adicionar o par
+          const convertedPair = {
+            symbol: existingPair.symbol,
+            lastPrice: parseFloat(existingPair.price),
+            bid: parseFloat(existingPair.price) * 0.9999,
+            ask: parseFloat(existingPair.price) * 1.0001,
+            volume24h: parseFloat(existingPair.volume_24h),
+            priceChangePercent: parseFloat(existingPair.change_24h.replace('%', '')),
+            high24h: parseFloat(existingPair.high_24h),
+            low24h: parseFloat(existingPair.low_24h)
+          };
+          
+          setAvailablePairs(prev => {
+            const filtered = prev.filter(p => p.symbol !== symbol);
+            return [...filtered, convertedPair];
+          });
+          
+          toast({
+            title: "Par adicionado",
+            description: `${symbol} foi adicionado à lista de pares disponíveis`
+          });
+          return;
+        }
       }
+      
+      // Se não existe nos dados do mercado ou backend indisponível, criar um par básico
+      const newPair: MarketData = {
+        symbol,
+        lastPrice: Math.random() * 1000 + 100, // Preço aleatório para demo
+        bid: 0,
+        ask: 0,
+        volume24h: Math.random() * 1000000,
+        priceChangePercent: (Math.random() - 0.5) * 10,
+        high24h: 0,
+        low24h: 0
+      };
+      
+      // Calcular bid/ask/high/low baseado no preço
+      newPair.bid = newPair.lastPrice * 0.9999;
+      newPair.ask = newPair.lastPrice * 1.0001;
+      newPair.high24h = newPair.lastPrice * 1.05;
+      newPair.low24h = newPair.lastPrice * 0.95;
+      
+      setAvailablePairs(prev => {
+        const filtered = prev.filter(p => p.symbol !== symbol);
+        return [...filtered, newPair];
+      });
+      
+      toast({
+        title: "Par adicionado (demo)",
+        description: `${symbol} foi adicionado com dados de demonstração`,
+        variant: "default"
+      });
+      
     } catch (error) {
       console.error('[ImprovedIndex] Erro ao adicionar par customizado:', error);
       toast({
         title: "Erro ao adicionar par",
-        description: "Não foi possível obter dados do par do backend",
+        description: "Não foi possível adicionar o par",
         variant: "destructive"
       });
     }
@@ -233,41 +286,52 @@ const ImprovedIndex = () => {
     try {
       console.log('[ImprovedIndex] Iniciando grid trading:', { symbol, config });
       
-      const gridConfig = {
-        symbol,
-        market_type: config?.marketType || 'spot',
-        initial_levels: config?.gridLevels || 8,
-        spacing_perc: config?.spacing || 0.001,
-        capital_usdt: config?.capital || 50
-      };
-      
-      const response = await RealFlaskApiService.startGrid(
-        gridConfig.symbol,
-        gridConfig.market_type,
-        gridConfig.initial_levels,
-        gridConfig.spacing_perc,
-        gridConfig.capital_usdt
-      );
-      
-      console.log('[ImprovedIndex] Grid iniciado:', response);
-      
-      toast({
-        title: "Trading iniciado",
-        description: `Grid trading iniciado para ${symbol}`,
-        variant: "default"
-      });
+      if (backendAvailable) {
+        const gridConfig = {
+          symbol,
+          market_type: config?.marketType || 'spot',
+          initial_levels: config?.gridLevels || 8,
+          spacing_perc: config?.spacing || 0.001,
+          capital_usdt: config?.capital || 50
+        };
+        
+        const response = await RealFlaskApiService.startGrid(
+          gridConfig.symbol,
+          gridConfig.market_type,
+          gridConfig.initial_levels,
+          gridConfig.spacing_perc,
+          gridConfig.capital_usdt
+        );
+        
+        console.log('[ImprovedIndex] Grid iniciado:', response);
+        
+        toast({
+          title: "Trading iniciado",
+          description: `Grid trading iniciado para ${symbol}`,
+          variant: "default"
+        });
+      } else {
+        // Modo demo
+        toast({
+          title: "Trading iniciado (DEMO)",
+          description: `Grid trading simulado para ${symbol}`,
+          variant: "default"
+        });
+      }
     } catch (error) {
       console.error('[ImprovedIndex] Erro ao iniciar trading:', error);
       toast({
         title: "Erro ao iniciar trading",
-        description: "Verifique a configuração e conexão com o backend",
+        description: backendAvailable ? 
+          "Verifique a configuração e conexão com o backend" : 
+          "Backend indisponível - modo demo ativo",
         variant: "destructive"
       });
       setIsTrading(false);
     }
   };
 
-  console.log('[ImprovedIndex] About to render, loading:', loading, 'error:', error);
+  console.log('[ImprovedIndex] About to render, loading:', loading, 'backendAvailable:', backendAvailable);
 
   if (loading) {
     return (
@@ -275,25 +339,9 @@ const ImprovedIndex = () => {
         <div className="text-center space-y-4">
           <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary mx-auto"></div>
           <h2 className="text-2xl font-semibold">Carregando Grid Trading Bot...</h2>
-          <p className="text-muted-foreground">Conectando com o backend...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center space-y-4 max-w-md">
-          <div className="text-destructive text-6xl">⚠️</div>
-          <h2 className="text-2xl font-semibold text-destructive">Erro de Conexão</h2>
-          <p className="text-muted-foreground">{error}</p>
-          <Button 
-            onClick={() => window.location.reload()} 
-            variant="outline"
-          >
-            Tentar Novamente
-          </Button>
+          <p className="text-muted-foreground">
+            {backendAvailable ? 'Conectando com o backend...' : 'Preparando modo offline...'}
+          </p>
         </div>
       </div>
     );
@@ -308,6 +356,9 @@ const ImprovedIndex = () => {
             <h1 className="text-3xl font-bold flex items-center gap-2">
               <BarChart3 className="h-8 w-8" />
               Grid Trading Bot
+              {!backendAvailable && (
+                <Badge variant="secondary" className="ml-2">DEMO</Badge>
+              )}
             </h1>
           </div>
           
@@ -315,6 +366,22 @@ const ImprovedIndex = () => {
             <BackendStatus />
           </div>
         </div>
+
+        {/* Backend Status Alert */}
+        {!backendAvailable && (
+          <Card className="border-orange-200 bg-orange-50">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-2 text-orange-700">
+                <Activity className="h-4 w-4" />
+                <span className="font-medium">Modo Demonstração</span>
+              </div>
+              <p className="text-sm text-orange-600 mt-1">
+                Backend indisponível. Usando dados de demonstração. 
+                Verifique se o servidor Flask está rodando em http://localhost:5000
+              </p>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Tabs System */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
