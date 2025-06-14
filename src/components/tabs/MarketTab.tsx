@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Globe, Activity } from 'lucide-react';
 import RecommendedPairs from '../RecommendedPairs';
 import TradingStats from '../TradingStats';
+import ManualPairSelector from '../ManualPairSelector';
 import { MarketData } from '../../types/trading';
 
 interface MarketTabProps {
@@ -19,18 +20,26 @@ const MarketTab: React.FC<MarketTabProps> = ({
   onSymbolChange,
   lastUpdate
 }) => {
+  const handlePairAdded = (symbol: string) => {
+    onSymbolChange(symbol);
+  };
+
   return (
     <div className="space-y-6">
-      {/* Market Overview */}
+      {/* Top Section - Controls and Stats */}
       <div className="grid grid-cols-12 gap-6">
-        <div className="col-span-6">
+        <div className="col-span-4">
           <RecommendedPairs
             onSelectPair={onSymbolChange}
             currentSymbol={selectedSymbol}
           />
         </div>
         
-        <div className="col-span-6">
+        <div className="col-span-4">
+          <ManualPairSelector onPairAdded={handlePairAdded} />
+        </div>
+        
+        <div className="col-span-4">
           <TradingStats symbol={selectedSymbol} />
         </div>
       </div>
