@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/hooks/use-toast";
 import { 
   TrendingUp, BarChart3, Settings, Activity, 
-  DollarSign, Brain, Target, Globe
+  DollarSign, Brain, Target, Globe, Users, Zap, Database, MessageCircle
 } from 'lucide-react';
 
 // Tab Components
@@ -16,14 +16,17 @@ import MarketTab from '../components/tabs/MarketTab';
 import ChartTab from '../components/tabs/ChartTab';
 import AnalysisTab from '../components/tabs/AnalysisTab';
 import PerformanceTab from '../components/tabs/PerformanceTab';
-import RLModelTab from '../components/tabs/RLModelTab';
+import SystemTab from '../components/tabs/SystemTab';
+import AgentsTab from '../components/tabs/AgentsTab';
+import HftTab from '../components/tabs/HftTab';
+import SentimentTab from '../components/tabs/SentimentTab';
 
 // Components
 import BackendStatus from '../components/BackendStatus';
 
 // Services and Types
 import { RealBinanceService } from '../services/realBinanceService';
-import { MarketData, GridLevel, RLState } from '../types/trading';
+import { MarketData, GridLevel } from '../types/trading';
 
 const ImprovedIndex = () => {
   const [selectedSymbol, setSelectedSymbol] = useState('BTCUSDT');
@@ -33,13 +36,6 @@ const ImprovedIndex = () => {
   const [isTrading, setIsTrading] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [activeTab, setActiveTab] = useState('trading');
-  const [rlState, setRlState] = useState<RLState>({
-    currentModel: 'PPO-v2.1',
-    isTraining: false,
-    lastTrainingTime: Date.now() - 3600000,
-    performance: 0.78,
-    confidence: 0.85
-  });
 
   // Fetch real pairs from backend
   useEffect(() => {
@@ -127,23 +123,6 @@ const ImprovedIndex = () => {
     }
   };
 
-  const handleTrainModel = () => {
-    setRlState(prev => ({ ...prev, isTraining: true }));
-    setTimeout(() => {
-      setRlState(prev => ({
-        ...prev,
-        isTraining: false,
-        lastTrainingTime: Date.now(),
-        performance: Math.min(0.95, prev.performance + 0.02),
-        confidence: Math.min(0.95, prev.confidence + 0.01)
-      }));
-      toast({
-        title: "Modelo retreinado",
-        description: "O modelo RL foi atualizado com dados reais"
-      });
-    }, 3000);
-  };
-
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto p-4 space-y-6">
@@ -163,7 +142,7 @@ const ImprovedIndex = () => {
 
         {/* Tabs System */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-6">
+          <TabsList className="grid w-full grid-cols-9">
             <TabsTrigger value="trading" className="flex items-center gap-2">
               <Target className="h-4 w-4" />
               Trading
@@ -184,9 +163,21 @@ const ImprovedIndex = () => {
               <DollarSign className="h-4 w-4" />
               Performance
             </TabsTrigger>
-            <TabsTrigger value="rl-model" className="flex items-center gap-2">
-              <Brain className="h-4 w-4" />
-              RL Model
+            <TabsTrigger value="system" className="flex items-center gap-2">
+              <Settings className="h-4 w-4" />
+              Sistema
+            </TabsTrigger>
+            <TabsTrigger value="agents" className="flex items-center gap-2">
+              <Users className="h-4 w-4" />
+              Agentes
+            </TabsTrigger>
+            <TabsTrigger value="hft" className="flex items-center gap-2">
+              <Zap className="h-4 w-4" />
+              HFT
+            </TabsTrigger>
+            <TabsTrigger value="sentiment" className="flex items-center gap-2">
+              <MessageCircle className="h-4 w-4" />
+              Sentiment
             </TabsTrigger>
           </TabsList>
 
@@ -233,11 +224,20 @@ const ImprovedIndex = () => {
             />
           </TabsContent>
 
-          <TabsContent value="rl-model" className="mt-6">
-            <RLModelTab
-              rlState={rlState}
-              onTrainModel={handleTrainModel}
-            />
+          <TabsContent value="system" className="mt-6">
+            <SystemTab />
+          </TabsContent>
+
+          <TabsContent value="agents" className="mt-6">
+            <AgentsTab />
+          </TabsContent>
+
+          <TabsContent value="hft" className="mt-6">
+            <HftTab />
+          </TabsContent>
+
+          <TabsContent value="sentiment" className="mt-6">
+            <SentimentTab />
           </TabsContent>
         </Tabs>
       </div>
