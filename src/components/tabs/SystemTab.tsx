@@ -12,14 +12,14 @@ import {
   TrendingUp, Zap, Shield, Monitor 
 } from 'lucide-react';
 import { toast } from "@/hooks/use-toast";
-import api from '../../services/apiService';
+import RealFlaskApiService from '../../services/realApiService';
 
 const SystemTab = () => {
   const [systemStatus, setSystemStatus] = useState<any>(null);
+  const [systemMetrics, setSystemMetrics] = useState<any>(null);
   const [balance, setBalance] = useState<any>(null);
   const [operationMode, setOperationMode] = useState<string>('');
-  const [storageStats, setStorageStats] = useState<any>(null);
-  const [websocketStatus, setWebsocketStatus] = useState<any>(null);
+  const [liveSystemStatus, setLiveSystemStatus] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [connectionError, setConnectionError] = useState(false);
 
@@ -33,19 +33,29 @@ const SystemTab = () => {
       
       // System status
       try {
-        const statusResponse = await api.get('/system/status');
-        console.log('[SystemTab] Status response:', statusResponse.data);
-        setSystemStatus(statusResponse.data);
+        const statusResponse = await RealFlaskApiService.getSystemStatus();
+        console.log('[SystemTab] Status response:', statusResponse);
+        setSystemStatus(statusResponse);
       } catch (error) {
         console.error('[SystemTab] Erro ao buscar status do sistema:', error);
         setSystemStatus(null);
       }
 
-      // Balance
+      // System metrics
       try {
-        const balanceResponse = await api.get('/balance/summary');
-        console.log('[SystemTab] Balance response:', balanceResponse.data);
-        setBalance(balanceResponse.data);
+        const metricsResponse = await RealFlaskApiService.getSystemMetrics();
+        console.log('[SystemTab] Metrics response:', metricsResponse);
+        setSystemMetrics(metricsResponse);
+      } catch (error) {
+        console.error('[SystemTab] Erro ao buscar métricas do sistema:', error);
+        setSystemMetrics(null);
+      }
+
+      // Balance summary
+      try {
+        const balanceResponse = await RealFlaskApiService.getBalanceSummary();
+        console.log('[SystemTab] Balance response:', balanceResponse);
+        setBalance(balanceResponse);
       } catch (error) {
         console.error('[SystemTab] Erro ao buscar saldo:', error);
         setBalance(null);
@@ -53,32 +63,22 @@ const SystemTab = () => {
 
       // Operation mode
       try {
-        const modeResponse = await api.get('/operation_mode');
-        console.log('[SystemTab] Mode response:', modeResponse.data);
-        setOperationMode(modeResponse.data?.mode || '');
+        const modeResponse = await RealFlaskApiService.getOperationMode();
+        console.log('[SystemTab] Mode response:', modeResponse);
+        setOperationMode(modeResponse?.mode || '');
       } catch (error) {
         console.error('[SystemTab] Erro ao buscar modo de operação:', error);
         setOperationMode('');
       }
 
-      // Storage stats
+      // Live system status
       try {
-        const storageResponse = await api.get('/storage/stats');
-        console.log('[SystemTab] Storage response:', storageResponse.data);
-        setStorageStats(storageResponse.data);
+        const liveStatusResponse = await RealFlaskApiService.getLiveSystemStatus();
+        console.log('[SystemTab] Live status response:', liveStatusResponse);
+        setLiveSystemStatus(liveStatusResponse);
       } catch (error) {
-        console.error('[SystemTab] Erro ao buscar estatísticas de armazenamento:', error);
-        setStorageStats(null);
-      }
-
-      // WebSocket status
-      try {
-        const wsResponse = await api.get('/websocket/status');
-        console.log('[SystemTab] WebSocket response:', wsResponse.data);
-        setWebsocketStatus(wsResponse.data);
-      } catch (error) {
-        console.error('[SystemTab] Erro ao buscar status do WebSocket:', error);
-        setWebsocketStatus(null);
+        console.error('[SystemTab] Erro ao buscar status ao vivo:', error);
+        setLiveSystemStatus(null);
       }
 
     } catch (error) {
@@ -99,48 +99,6 @@ const SystemTab = () => {
     const interval = setInterval(fetchSystemData, 30000);
     return () => clearInterval(interval);
   }, []);
-
-  const handleOperationModeChange = async (newMode: string) => {
-    try {
-      console.log('[SystemTab] Alterando modo de operação para:', newMode);
-      const response = await api.post('/operation_mode', { mode: newMode });
-      console.log('[SystemTab] Modo alterado com sucesso:', response.data);
-      
-      setOperationMode(newMode);
-      toast({
-        title: "Modo alterado",
-        description: `Modo de operação alterado para ${newMode}`
-      });
-    } catch (error) {
-      console.error('[SystemTab] Erro ao alterar modo de operação:', error);
-      toast({
-        title: "Erro",
-        description: "Falha ao alterar modo de operação",
-        variant: "destructive"
-      });
-    }
-  };
-
-  const handleStorageCleanup = async () => {
-    try {
-      console.log('[SystemTab] Iniciando limpeza de armazenamento...');
-      const response = await api.post('/storage/cleanup');
-      console.log('[SystemTab] Limpeza concluída:', response.data);
-      
-      toast({
-        title: "Limpeza concluída",
-        description: "Dados antigos removidos com sucesso"
-      });
-      fetchSystemData(); // Refresh data
-    } catch (error) {
-      console.error('[SystemTab] Erro na limpeza de armazenamento:', error);
-      toast({
-        title: "Erro",
-        description: "Falha na limpeza de dados",
-        variant: "destructive"
-      });
-    }
-  };
 
   if (connectionError) {
     return (
@@ -175,32 +133,32 @@ const SystemTab = () => {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {systemStatus ? (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="text-center">
-                <div className="text-2xl font-bold text-green-600">
-                  {systemStatus?.status === 'healthy' ? 'Saudável' : systemStatus?.status || 'Desconhecido'}
-                </div>
-                <div className="text-sm text-muted-foreground">Status Geral</div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="text-center">
+              <div className="text-2xl font-bold text-green-600">
+                {systemStatus?.api_status || 'Offline'}
               </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold">
-                  {systemStatus?.active_bots || 0}
-                </div>
-                <div className="text-sm text-muted-foreground">Bots Ativos</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold">
-                  {systemStatus?.uptime || '--'}
-                </div>
-                <div className="text-sm text-muted-foreground">Uptime</div>
-              </div>
+              <div className="text-sm text-muted-foreground">API Status</div>
             </div>
-          ) : (
-            <div className="text-center text-muted-foreground">
-              {loading ? 'Carregando status do sistema...' : 'Dados do sistema não disponíveis'}
+            <div className="text-center">
+              <div className="text-2xl font-bold">
+                {Object.keys(systemStatus?.active_bots || {}).length}
+              </div>
+              <div className="text-sm text-muted-foreground">Bots Ativos</div>
             </div>
-          )}
+            <div className="text-center">
+              <div className="text-2xl font-bold">
+                {systemMetrics?.system?.uptime || 0}s
+              </div>
+              <div className="text-sm text-muted-foreground">Uptime</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold">
+                {systemMetrics?.system?.active_pairs || 0}
+              </div>
+              <div className="text-sm text-muted-foreground">Pares Ativos</div>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -209,28 +167,25 @@ const SystemTab = () => {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Settings className="h-5 w-5" />
-            Controle de Operação
+            Modo de Operação
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <Label htmlFor="operation-mode">Modo de Operação</Label>
-              <Select value={operationMode} onValueChange={handleOperationModeChange}>
-                <SelectTrigger className="w-48">
-                  <SelectValue placeholder="Selecione o modo" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="normal">Normal</SelectItem>
-                  <SelectItem value="conservative">Conservador</SelectItem>
-                  <SelectItem value="aggressive">Agressivo</SelectItem>
-                  <SelectItem value="maintenance">Manutenção</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label htmlFor="operation-mode">Modo Atual:</Label>
+              <Badge variant={operationMode === 'Production' ? 'default' : 'secondary'}>
+                {operationMode || 'Carregando...'}
+              </Badge>
             </div>
-            <div className="text-sm text-muted-foreground">
-              Controla o comportamento geral dos algoritmos de trading
-            </div>
+            {operationMode && (
+              <div className="text-sm text-muted-foreground">
+                {operationMode === 'Production' ? 
+                  'Trading ao vivo com dinheiro real' : 
+                  'Modo de teste/simulação'
+                }
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -240,28 +195,34 @@ const SystemTab = () => {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <DollarSign className="h-5 w-5" />
-            Saldos da Conta
+            Resumo de Saldos
           </CardTitle>
         </CardHeader>
         <CardContent>
           {balance ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <div className="text-sm text-muted-foreground">Spot Wallet</div>
-                <div className="text-lg font-bold">
-                  ${balance.spot_total?.toFixed(2) || '0.00'}
+                <div className="text-sm text-muted-foreground">Total Portfolio</div>
+                <div className="text-2xl font-bold">
+                  ${balance.total_usdt?.toFixed(2) || '0.00'}
                 </div>
-                <div className="text-xs text-muted-foreground">
-                  {balance.spot_assets?.length || 0} ativos
+              </div>
+              <div className="space-y-2">
+                <div className="text-sm text-muted-foreground">Disponível para Trading</div>
+                <div className="text-lg font-bold text-green-600">
+                  ${balance.available_for_trading?.toFixed(2) || '0.00'}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <div className="text-sm text-muted-foreground">Spot Wallet</div>
+                <div className="text-lg font-medium">
+                  ${balance.spot_usdt?.toFixed(2) || '0.00'}
                 </div>
               </div>
               <div className="space-y-2">
                 <div className="text-sm text-muted-foreground">Futures Wallet</div>
-                <div className="text-lg font-bold">
-                  ${balance.futures_total?.toFixed(2) || '0.00'}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  Margin: {balance.futures_margin?.toFixed(2) || '0.00'}%
+                <div className="text-lg font-medium">
+                  ${balance.futures_usdt?.toFixed(2) || '0.00'}
                 </div>
               </div>
             </div>
@@ -273,90 +234,102 @@ const SystemTab = () => {
         </CardContent>
       </Card>
 
-      {/* WebSocket Connections */}
+      {/* System Metrics */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Activity className="h-5 w-5" />
-            Conexões WebSocket
+            <TrendingUp className="h-5 w-5" />
+            Métricas de Performance
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
-            {websocketStatus?.connections ? (
-              websocketStatus.connections.map((conn: any, index: number) => (
-                <div key={index} className="flex items-center justify-between p-3 border rounded">
-                  <div>
-                    <div className="font-medium">{conn.stream}</div>
-                    <div className="text-sm text-muted-foreground">{conn.symbol || 'Global'}</div>
-                  </div>
-                  <Badge variant={conn.status === 'connected' ? 'default' : 'destructive'}>
-                    {conn.status}
-                  </Badge>
+          {systemMetrics ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold">
+                  {systemMetrics.trading?.total_trades || 0}
                 </div>
-              ))
-            ) : (
-              <div className="text-center text-muted-foreground">
-                {loading ? 'Verificando conexões...' : 'Dados de conexão WebSocket não disponíveis'}
+                <div className="text-sm text-muted-foreground">Total Trades</div>
               </div>
-            )}
-          </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-green-600">
+                  {systemMetrics.trading?.success_rate?.toFixed(1) || '0.0'}%
+                </div>
+                <div className="text-sm text-muted-foreground">Taxa de Sucesso</div>
+              </div>
+              <div className="text-center">
+                <div className={`text-2xl font-bold ${
+                  (systemMetrics.trading?.total_pnl || 0) >= 0 ? 'text-green-600' : 'text-red-600'
+                }`}>
+                  ${systemMetrics.trading?.total_pnl?.toFixed(2) || '0.00'}
+                </div>
+                <div className="text-sm text-muted-foreground">P&L Total</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold">
+                  {systemMetrics.cache?.hit_rate?.toFixed(1) || '0.0'}%
+                </div>
+                <div className="text-sm text-muted-foreground">Cache Hit Rate</div>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center text-muted-foreground">
+              {loading ? 'Carregando métricas...' : 'Métricas não disponíveis'}
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {/* Storage Management */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Database className="h-5 w-5" />
-            Gerenciamento de Armazenamento
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {storageStats ? (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="text-center">
-                  <div className="text-2xl font-bold">
-                    {(storageStats.total_size / (1024 * 1024)).toFixed(1)}MB
-                  </div>
-                  <div className="text-sm text-muted-foreground">Tamanho Total</div>
+      {/* Live System Health */}
+      {liveSystemStatus?.success && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="h-5 w-5" />
+              Status dos Componentes
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="p-3 border rounded">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-medium">Trading Engine</span>
+                  <Badge variant={liveSystemStatus.status.components.trading.status === 'active' ? 'default' : 'secondary'}>
+                    {liveSystemStatus.status.components.trading.status}
+                  </Badge>
                 </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold">
-                    {storageStats.file_count || 0}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Arquivos</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold">
-                    {storageStats.old_files || 0}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Arquivos Antigos</div>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center text-muted-foreground">
-                {loading ? 'Carregando estatísticas de armazenamento...' : 'Dados de armazenamento não disponíveis'}
-              </div>
-            )}
-            
-            <Separator />
-            
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="font-medium">Limpeza Automática</div>
                 <div className="text-sm text-muted-foreground">
-                  Remove dados com mais de 30 dias
+                  Uptime: {liveSystemStatus.status.components.trading.uptime}s
                 </div>
               </div>
-              <Button onClick={handleStorageCleanup} variant="outline">
-                Executar Limpeza
-              </Button>
+              
+              <div className="p-3 border rounded">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-medium">WebSocket</span>
+                  <Badge variant={liveSystemStatus.status.components.websocket.status === 'connected' ? 'default' : 'destructive'}>
+                    {liveSystemStatus.status.components.websocket.status}
+                  </Badge>
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  Latency: {liveSystemStatus.status.components.websocket.latency}ms
+                </div>
+              </div>
+              
+              <div className="p-3 border rounded">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-medium">AI Agents</span>
+                  <Badge variant={liveSystemStatus.status.components.ai_agents.status === 'operational' ? 'default' : 'secondary'}>
+                    {liveSystemStatus.status.components.ai_agents.status}
+                  </Badge>
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  Decisões/min: {liveSystemStatus.status.components.ai_agents.decisions_per_minute}
+                </div>
+              </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Refresh Button */}
       <div className="flex justify-center">

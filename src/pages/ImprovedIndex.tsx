@@ -25,7 +25,7 @@ import SentimentTab from '../components/tabs/SentimentTab';
 import BackendStatus from '../components/BackendStatus';
 
 // Services and Types
-import { RealBinanceService } from '../services/realBinanceService';
+import RealFlaskApiService from '../services/realApiService';
 import { MarketData, GridLevel } from '../types/trading';
 
 const ImprovedIndex = () => {
@@ -33,35 +33,36 @@ const ImprovedIndex = () => {
   const [marketData, setMarketData] = useState<MarketData | undefined>();
   const [gridLevels, setGridLevels] = useState<GridLevel[]>([]);
   const [availablePairs, setAvailablePairs] = useState<MarketData[]>([]);
-  const [customPairs, setCustomPairs] = useState<Set<string>>(new Set());
   const [isTrading, setIsTrading] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [activeTab, setActiveTab] = useState('trading');
 
-  // Fetch real pairs from backend
+  // Fetch real pairs from Flask API
   useEffect(() => {
     const fetchPairs = async () => {
       try {
-        const pairs = await RealBinanceService.getTradingPairs();
-        setAvailablePairs(pairs);
+        console.log('[ImprovedIndex] Buscando dados de mercado...');
+        const marketResponse = await RealFlaskApiService.getMarketData(100);
+        console.log('[ImprovedIndex] Market data response:', marketResponse);
         
-        const current = pairs.find(p => p.symbol === selectedSymbol);
-        if (current) {
-          setMarketData(current);
-        }
-      } catch (error) {
-        console.error('Error fetching pairs:', error);
-        try {
-          const marketResponse = await RealBinanceService.getMarketData();
-          setAvailablePairs(marketResponse);
+        if (marketResponse?.tickers) {
+          const convertedPairs = RealFlaskApiService.convertMarketData(marketResponse);
+          setAvailablePairs(convertedPairs);
           
-          const current = marketResponse.find(p => p.symbol === selectedSymbol);
+          const current = convertedPairs.find(p => p.symbol === selectedSymbol);
           if (current) {
             setMarketData(current);
           }
-        } catch (fallbackError) {
-          console.error('Error fetching market data:', fallbackError);
+          
+          setLastUpdate(new Date());
         }
+      } catch (error) {
+        console.error('[ImprovedIndex] Erro ao buscar dados de mercado:', error);
+        toast({
+          title: "Erro ao carregar dados",
+          description: "Não foi possível carregar os dados de mercado",
+          variant: "destructive"
+        });
       }
     };
 
@@ -70,12 +71,12 @@ const ImprovedIndex = () => {
     return () => clearInterval(interval);
   }, [selectedSymbol]);
 
-  // Generate real grid levels only when bot is active
+  // Generate grid levels based on current price and trading status
   useEffect(() => {
     if (marketData && isTrading) {
       const levels: GridLevel[] = [];
       const basePrice = marketData.lastPrice;
-      const stepSize = basePrice * 0.01; // 1% steps
+      const stepSize = basePrice * 0.001; // 0.1% steps
       
       for (let i = -10; i <= 10; i++) {
         if (i !== 0) {
@@ -98,6 +99,10 @@ const ImprovedIndex = () => {
 
   const handleSymbolChange = (symbol: string) => {
     setSelectedSymbol(symbol);
+    const current = availablePairs.find(p => p.symbol === symbol);
+    if (current) {
+      setMarketData(current);
+    }
     toast({
       title: "Par alterado",
       description: `Mudou para ${symbol}`
@@ -105,22 +110,37 @@ const ImprovedIndex = () => {
   };
 
   const handlePairAdded = async (symbol: string) => {
-    // Adicionar à lista de pares customizados
-    setCustomPairs(prev => new Set([...prev, symbol]));
-    
-    // Tentar obter dados do par do backend
     try {
-      const response = await RealBinanceService.getMarketData();
-      const existingPair = response.find(p => p.symbol === symbol);
+      console.log('[ImprovedIndex] Adicionando par customizado:', symbol);
+      
+      // Buscar dados atualizados do mercado
+      const marketResponse = await RealFlaskApiService.getMarketData();
+      const existingPair = marketResponse?.tickers?.find((t: any) => t.symbol === symbol);
       
       if (existingPair) {
-        // Se o par já existe nos dados do backend, usar esses dados
+        // Converter e adicionar o par
+        const convertedPair = {
+          symbol: existingPair.symbol,
+          lastPrice: parseFloat(existingPair.price),
+          bid: parseFloat(existingPair.price) * 0.9999,
+          ask: parseFloat(existingPair.price) * 1.0001,
+          volume24h: parseFloat(existingPair.volume_24h),
+          priceChangePercent: parseFloat(existingPair.change_24h.replace('%', '')),
+          high24h: parseFloat(existingPair.high_24h),
+          low24h: parseFloat(existingPair.low_24h)
+        };
+        
         setAvailablePairs(prev => {
           const filtered = prev.filter(p => p.symbol !== symbol);
-          return [...filtered, existingPair];
+          return [...filtered, convertedPair];
+        });
+        
+        toast({
+          title: "Par adicionado",
+          description: `${symbol} foi adicionado à lista de pares disponíveis`
         });
       } else {
-        // Se não existe, criar um par básico
+        // Se não existe nos dados do mercado, criar um par básico
         const newPair: MarketData = {
           symbol,
           lastPrice: 0,
@@ -136,14 +156,15 @@ const ImprovedIndex = () => {
           const filtered = prev.filter(p => p.symbol !== symbol);
           return [...filtered, newPair];
         });
+        
+        toast({
+          title: "Par adicionado (básico)",
+          description: `${symbol} foi adicionado mas sem dados de mercado`,
+          variant: "default"
+        });
       }
-      
-      toast({
-        title: "Par adicionado",
-        description: `${symbol} foi adicionado à lista de pares disponíveis`
-      });
     } catch (error) {
-      console.error('Error adding custom pair:', error);
+      console.error('[ImprovedIndex] Erro ao adicionar par customizado:', error);
       toast({
         title: "Erro ao adicionar par",
         description: "Não foi possível obter dados do par do backend",
@@ -155,19 +176,38 @@ const ImprovedIndex = () => {
   const handleStartTrading = async (symbol: string, config?: any) => {
     setIsTrading(true);
     try {
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      console.log('[ImprovedIndex] Iniciando grid trading:', { symbol, config });
+      
+      const gridConfig = {
+        symbol,
+        market_type: config?.marketType || 'spot',
+        initial_levels: config?.gridLevels || 8,
+        spacing_perc: config?.spacing || 0.001,
+        capital_usdt: config?.capital || 50
+      };
+      
+      const response = await RealFlaskApiService.startGrid(
+        gridConfig.symbol,
+        gridConfig.market_type,
+        gridConfig.initial_levels,
+        gridConfig.spacing_perc,
+        gridConfig.capital_usdt
+      );
+      
+      console.log('[ImprovedIndex] Grid iniciado:', response);
+      
       toast({
         title: "Trading iniciado",
-        description: `Bot grid iniciado para ${symbol}`,
+        description: `Grid trading iniciado para ${symbol}`,
         variant: "default"
       });
     } catch (error) {
+      console.error('[ImprovedIndex] Erro ao iniciar trading:', error);
       toast({
         title: "Erro ao iniciar trading",
-        description: "Verifique a configuração do backend",
+        description: "Verifique a configuração e conexão com o backend",
         variant: "destructive"
       });
-    } finally {
       setIsTrading(false);
     }
   };
