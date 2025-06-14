@@ -11,6 +11,7 @@ interface MarketTabProps {
   availablePairs: MarketData[];
   selectedSymbol: string;
   onSymbolChange: (symbol: string) => void;
+  onPairAdded: (symbol: string) => void;
   lastUpdate: Date;
 }
 
@@ -18,9 +19,11 @@ const MarketTab: React.FC<MarketTabProps> = ({
   availablePairs,
   selectedSymbol,
   onSymbolChange,
+  onPairAdded,
   lastUpdate
 }) => {
   const handlePairAdded = (symbol: string) => {
+    onPairAdded(symbol);
     onSymbolChange(symbol);
   };
 

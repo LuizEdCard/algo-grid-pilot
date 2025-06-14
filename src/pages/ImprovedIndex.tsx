@@ -33,6 +33,7 @@ const ImprovedIndex = () => {
   const [marketData, setMarketData] = useState<MarketData | undefined>();
   const [gridLevels, setGridLevels] = useState<GridLevel[]>([]);
   const [availablePairs, setAvailablePairs] = useState<MarketData[]>([]);
+  const [customPairs, setCustomPairs] = useState<Set<string>>(new Set());
   const [isTrading, setIsTrading] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [activeTab, setActiveTab] = useState('trading');
@@ -101,6 +102,54 @@ const ImprovedIndex = () => {
       title: "Par alterado",
       description: `Mudou para ${symbol}`
     });
+  };
+
+  const handlePairAdded = async (symbol: string) => {
+    // Adicionar à lista de pares customizados
+    setCustomPairs(prev => new Set([...prev, symbol]));
+    
+    // Tentar obter dados do par do backend
+    try {
+      const response = await RealBinanceService.getMarketData();
+      const existingPair = response.find(p => p.symbol === symbol);
+      
+      if (existingPair) {
+        // Se o par já existe nos dados do backend, usar esses dados
+        setAvailablePairs(prev => {
+          const filtered = prev.filter(p => p.symbol !== symbol);
+          return [...filtered, existingPair];
+        });
+      } else {
+        // Se não existe, criar um par básico
+        const newPair: MarketData = {
+          symbol,
+          lastPrice: 0,
+          bid: 0,
+          ask: 0,
+          volume24h: 0,
+          priceChangePercent: 0,
+          high24h: 0,
+          low24h: 0
+        };
+        
+        setAvailablePairs(prev => {
+          const filtered = prev.filter(p => p.symbol !== symbol);
+          return [...filtered, newPair];
+        });
+      }
+      
+      toast({
+        title: "Par adicionado",
+        description: `${symbol} foi adicionado à lista de pares disponíveis`
+      });
+    } catch (error) {
+      console.error('Error adding custom pair:', error);
+      toast({
+        title: "Erro ao adicionar par",
+        description: "Não foi possível obter dados do par do backend",
+        variant: "destructive"
+      });
+    }
   };
 
   const handleStartTrading = async (symbol: string, config?: any) => {
@@ -196,6 +245,7 @@ const ImprovedIndex = () => {
               availablePairs={availablePairs}
               selectedSymbol={selectedSymbol}
               onSymbolChange={handleSymbolChange}
+              onPairAdded={handlePairAdded}
               lastUpdate={lastUpdate}
             />
           </TabsContent>
