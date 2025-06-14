@@ -13,6 +13,7 @@ import {
   Users, Search, Clock, Heart
 } from 'lucide-react';
 import { toast } from "@/hooks/use-toast";
+import api from '../../services/apiService';
 
 interface SentimentData {
   symbol: string;
@@ -50,56 +51,59 @@ const SentimentTab = () => {
   const [customText, setCustomText] = useState('');
   const [customAnalysis, setCustomAnalysis] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [connectionError, setConnectionError] = useState(false);
 
   // Fetch sentiment status
   const fetchSentimentStatus = async () => {
     try {
-      const response = await fetch('/api/sentiment/status');
-      if (response.ok) {
-        const data = await response.json();
-        setSentimentStatus(data);
-      }
+      console.log('[SentimentTab] Buscando status do sentiment...');
+      const response = await api.get('/sentiment/status');
+      console.log('[SentimentTab] Sentiment status response:', response.data);
+      setSentimentStatus(response.data);
+      setConnectionError(false);
     } catch (error) {
-      console.error('Erro ao buscar status do sentiment:', error);
+      console.error('[SentimentTab] Erro ao buscar status do sentiment:', error);
+      setSentimentStatus(null);
+      setConnectionError(true);
     }
   };
 
   // Fetch symbol sentiment
   const fetchSymbolSentiment = async (symbol: string) => {
     try {
-      const response = await fetch(`/api/social/sentiment/${symbol}`);
-      if (response.ok) {
-        const data = await response.json();
-        setSymbolSentiment(data);
-      }
+      console.log(`[SentimentTab] Buscando sentiment para ${symbol}...`);
+      const response = await api.get(`/social/sentiment/${symbol}`);
+      console.log('[SentimentTab] Symbol sentiment response:', response.data);
+      setSymbolSentiment(response.data);
     } catch (error) {
-      console.error('Erro ao buscar sentiment do símbolo:', error);
+      console.error('[SentimentTab] Erro ao buscar sentiment do símbolo:', error);
+      setSymbolSentiment(null);
     }
   };
 
   // Fetch social feeds
   const fetchSocialFeeds = async () => {
     try {
-      const response = await fetch('/api/social/feeds');
-      if (response.ok) {
-        const data = await response.json();
-        setSocialFeeds(data.posts || []);
-      }
+      console.log('[SentimentTab] Buscando feeds sociais...');
+      const response = await api.get('/social/feeds');
+      console.log('[SentimentTab] Social feeds response:', response.data);
+      setSocialFeeds(response.data.posts || []);
     } catch (error) {
-      console.error('Erro ao buscar feeds sociais:', error);
+      console.error('[SentimentTab] Erro ao buscar feeds sociais:', error);
+      setSocialFeeds([]);
     }
   };
 
   // Fetch influencer posts
   const fetchInfluencerPosts = async () => {
     try {
-      const response = await fetch('/api/social/influencers');
-      if (response.ok) {
-        const data = await response.json();
-        setInfluencerPosts(data.posts || []);
-      }
+      console.log('[SentimentTab] Buscando posts de influenciadores...');
+      const response = await api.get('/social/influencers');
+      console.log('[SentimentTab] Influencer posts response:', response.data);
+      setInfluencerPosts(response.data.posts || []);
     } catch (error) {
-      console.error('Erro ao buscar posts de influenciadores:', error);
+      console.error('[SentimentTab] Erro ao buscar posts de influenciadores:', error);
+      setInfluencerPosts([]);
     }
   };
 
@@ -109,21 +113,17 @@ const SentimentTab = () => {
 
     setLoading(true);
     try {
-      const response = await fetch('/api/sentiment/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: customText })
+      console.log('[SentimentTab] Analisando texto customizado...');
+      const response = await api.post('/sentiment/analyze', { text: customText });
+      console.log('[SentimentTab] Custom analysis response:', response.data);
+      
+      setCustomAnalysis(response.data);
+      toast({
+        title: "Análise concluída",
+        description: `Sentiment: ${getSentimentLabel(response.data.sentiment)}`
       });
-
-      if (response.ok) {
-        const data = await response.json();
-        setCustomAnalysis(data);
-        toast({
-          title: "Análise concluída",
-          description: `Sentiment: ${getSentimentLabel(data.sentiment)}`
-        });
-      }
     } catch (error) {
+      console.error('[SentimentTab] Erro na análise de sentiment:', error);
       toast({
         title: "Erro",
         description: "Falha na análise de sentiment",
@@ -171,6 +171,28 @@ const SentimentTab = () => {
       fetchSymbolSentiment(searchSymbol);
     }
   }, [searchSymbol]);
+
+  if (connectionError) {
+    return (
+      <div className="space-y-6">
+        <Card>
+          <CardContent className="p-6">
+            <div className="text-center">
+              <div className="text-lg font-medium text-destructive mb-2">
+                Erro de Conexão com o Backend de Sentiment
+              </div>
+              <div className="text-sm text-muted-foreground mb-4">
+                Não foi possível conectar com o servidor de análise de sentiment.
+              </div>
+              <Button onClick={fetchSentimentStatus} disabled={loading}>
+                {loading ? 'Tentando reconectar...' : 'Tentar Novamente'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -228,7 +250,7 @@ const SentimentTab = () => {
               </Button>
             </div>
 
-            {symbolSentiment && (
+            {symbolSentiment ? (
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 border rounded">
                 <div className="text-center">
                   <div className={`text-2xl font-bold ${getSentimentColor(symbolSentiment.sentiment_score)}`}>
@@ -254,6 +276,10 @@ const SentimentTab = () => {
                   </Badge>
                   <div className="text-sm text-muted-foreground mt-1">Tendência</div>
                 </div>
+              </div>
+            ) : (
+              <div className="text-center text-muted-foreground p-4 border rounded">
+                Dados de sentiment não disponíveis para este símbolo
               </div>
             )}
           </div>
@@ -329,31 +355,37 @@ const SentimentTab = () => {
             </CardHeader>
             <CardContent>
               <ScrollArea className="h-96">
-                <div className="space-y-3">
-                  {socialFeeds.map((post, index) => (
-                    <div key={index} className="p-3 border rounded">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline">{post.platform}</Badge>
-                          <span className="text-sm font-medium">@{post.author}</span>
+                {socialFeeds.length > 0 ? (
+                  <div className="space-y-3">
+                    {socialFeeds.map((post, index) => (
+                      <div key={index} className="p-3 border rounded">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline">{post.platform}</Badge>
+                            <span className="text-sm font-medium">@{post.author}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {getSentimentIcon(post.sentiment)}
+                            <span className="text-xs text-muted-foreground">
+                              {new Date(post.timestamp).toLocaleTimeString()}
+                            </span>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          {getSentimentIcon(post.sentiment)}
-                          <span className="text-xs text-muted-foreground">
-                            {new Date(post.timestamp).toLocaleTimeString()}
+                        <div className="text-sm mb-2">{post.content}</div>
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span>Engagement: {post.engagement}</span>
+                          <span className={getSentimentColor(post.sentiment)}>
+                            Sentiment: {getSentimentLabel(post.sentiment)}
                           </span>
                         </div>
                       </div>
-                      <div className="text-sm mb-2">{post.content}</div>
-                      <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>Engagement: {post.engagement}</span>
-                        <span className={getSentimentColor(post.sentiment)}>
-                          Sentiment: {getSentimentLabel(post.sentiment)}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center text-muted-foreground py-8">
+                    Nenhum post de redes sociais disponível
+                  </div>
+                )}
               </ScrollArea>
             </CardContent>
           </Card>
@@ -369,34 +401,40 @@ const SentimentTab = () => {
             </CardHeader>
             <CardContent>
               <ScrollArea className="h-96">
-                <div className="space-y-3">
-                  {influencerPosts.map((post, index) => (
-                    <div key={index} className="p-3 border rounded">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <Badge variant="default">{post.platform}</Badge>
-                          <span className="text-sm font-medium">{post.influencer}</span>
-                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <Users className="h-3 w-3" />
-                            {(post.followers / 1000).toFixed(0)}K
+                {influencerPosts.length > 0 ? (
+                  <div className="space-y-3">
+                    {influencerPosts.map((post, index) => (
+                      <div key={index} className="p-3 border rounded">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="default">{post.platform}</Badge>
+                            <span className="text-sm font-medium">{post.influencer}</span>
+                            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                              <Users className="h-3 w-3" />
+                              {(post.followers / 1000).toFixed(0)}K
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {getSentimentIcon(post.sentiment)}
+                            <span className="text-xs text-muted-foreground">
+                              {new Date(post.timestamp).toLocaleTimeString()}
+                            </span>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          {getSentimentIcon(post.sentiment)}
-                          <span className="text-xs text-muted-foreground">
-                            {new Date(post.timestamp).toLocaleTimeString()}
+                        <div className="text-sm mb-2">{post.content}</div>
+                        <div className="text-xs text-muted-foreground">
+                          <span className={getSentimentColor(post.sentiment)}>
+                            Sentiment: {getSentimentLabel(post.sentiment)}
                           </span>
                         </div>
                       </div>
-                      <div className="text-sm mb-2">{post.content}</div>
-                      <div className="text-xs text-muted-foreground">
-                        <span className={getSentimentColor(post.sentiment)}>
-                          Sentiment: {getSentimentLabel(post.sentiment)}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center text-muted-foreground py-8">
+                    Nenhum post de influenciadores disponível
+                  </div>
+                )}
               </ScrollArea>
             </CardContent>
           </Card>

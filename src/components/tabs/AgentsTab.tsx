@@ -10,6 +10,7 @@ import {
   Clock, CheckCircle, AlertCircle, Play
 } from 'lucide-react';
 import { toast } from "@/hooks/use-toast";
+import api from '../../services/apiService';
 
 interface Agent {
   name: string;
@@ -43,33 +44,37 @@ const AgentsTab = () => {
   const [systemMetrics, setSystemMetrics] = useState<any>(null);
   const [availableTests, setAvailableTests] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [connectionError, setConnectionError] = useState(false);
 
   // Fetch agents list
   const fetchAgents = async () => {
     try {
-      const response = await fetch('/api/agents');
-      if (response.ok) {
-        const data = await response.json();
-        setAgents(data.agents || []);
-        if (data.agents?.length > 0 && !selectedAgent) {
-          setSelectedAgent(data.agents[0].name);
-        }
+      console.log('[AgentsTab] Buscando lista de agentes...');
+      const response = await api.get('/agents');
+      console.log('[AgentsTab] Agents response:', response.data);
+      
+      setAgents(response.data.agents || []);
+      if (response.data.agents?.length > 0 && !selectedAgent) {
+        setSelectedAgent(response.data.agents[0].name);
       }
+      setConnectionError(false);
     } catch (error) {
-      console.error('Erro ao buscar agentes:', error);
+      console.error('[AgentsTab] Erro ao buscar agentes:', error);
+      setAgents([]);
+      setConnectionError(true);
     }
   };
 
   // Fetch system metrics
   const fetchSystemMetrics = async () => {
     try {
-      const response = await fetch('/api/metrics');
-      if (response.ok) {
-        const data = await response.json();
-        setSystemMetrics(data);
-      }
+      console.log('[AgentsTab] Buscando métricas do sistema...');
+      const response = await api.get('/metrics');
+      console.log('[AgentsTab] System metrics response:', response.data);
+      setSystemMetrics(response.data);
     } catch (error) {
-      console.error('Erro ao buscar métricas do sistema:', error);
+      console.error('[AgentsTab] Erro ao buscar métricas do sistema:', error);
+      setSystemMetrics(null);
     }
   };
 
@@ -79,29 +84,40 @@ const AgentsTab = () => {
     
     setLoading(true);
     try {
+      console.log(`[AgentsTab] Buscando dados do agente: ${agentName}`);
+      
       // Agent metrics
-      const metricsResponse = await fetch(`/api/agents/${agentName}/metrics`);
-      if (metricsResponse.ok) {
-        const metricsData = await metricsResponse.json();
-        setAgentMetrics(metricsData);
+      try {
+        const metricsResponse = await api.get(`/agents/${agentName}/metrics`);
+        console.log('[AgentsTab] Agent metrics response:', metricsResponse.data);
+        setAgentMetrics(metricsResponse.data);
+      } catch (error) {
+        console.error('[AgentsTab] Erro ao buscar métricas do agente:', error);
+        setAgentMetrics(null);
       }
 
       // Agent history
-      const historyResponse = await fetch(`/api/agents/${agentName}/history`);
-      if (historyResponse.ok) {
-        const historyData = await historyResponse.json();
-        setAgentHistory(historyData.history || []);
+      try {
+        const historyResponse = await api.get(`/agents/${agentName}/history`);
+        console.log('[AgentsTab] Agent history response:', historyResponse.data);
+        setAgentHistory(historyResponse.data.history || []);
+      } catch (error) {
+        console.error('[AgentsTab] Erro ao buscar histórico do agente:', error);
+        setAgentHistory([]);
       }
 
       // Agent decisions
-      const decisionsResponse = await fetch(`/api/agents/${agentName}/decisions`);
-      if (decisionsResponse.ok) {
-        const decisionsData = await decisionsResponse.json();
-        setAgentDecisions(decisionsData.decisions || []);
+      try {
+        const decisionsResponse = await api.get(`/agents/${agentName}/decisions`);
+        console.log('[AgentsTab] Agent decisions response:', decisionsResponse.data);
+        setAgentDecisions(decisionsResponse.data.decisions || []);
+      } catch (error) {
+        console.error('[AgentsTab] Erro ao buscar decisões do agente:', error);
+        setAgentDecisions([]);
       }
 
     } catch (error) {
-      console.error('Erro ao buscar dados do agente:', error);
+      console.error('[AgentsTab] Erro geral ao buscar dados do agente:', error);
     } finally {
       setLoading(false);
     }
@@ -110,32 +126,30 @@ const AgentsTab = () => {
   // Fetch available tests
   const fetchAvailableTests = async () => {
     try {
-      const response = await fetch('/api/testing/available');
-      if (response.ok) {
-        const data = await response.json();
-        setAvailableTests(data.tests || []);
-      }
+      console.log('[AgentsTab] Buscando testes disponíveis...');
+      const response = await api.get('/testing/available');
+      console.log('[AgentsTab] Available tests response:', response.data);
+      setAvailableTests(response.data.tests || []);
     } catch (error) {
-      console.error('Erro ao buscar testes:', error);
+      console.error('[AgentsTab] Erro ao buscar testes:', error);
+      setAvailableTests([]);
     }
   };
 
   // Run diagnostic test
   const runTest = async (testName: string) => {
     try {
-      const response = await fetch(`/api/testing/run/${testName}`, {
-        method: 'POST'
+      console.log(`[AgentsTab] Executando teste: ${testName}`);
+      const response = await api.post(`/testing/run/${testName}`);
+      console.log('[AgentsTab] Test result:', response.data);
+      
+      toast({
+        title: "Teste executado",
+        description: `${testName}: ${response.data.status}`,
+        variant: response.data.status === 'passed' ? 'default' : 'destructive'
       });
-
-      if (response.ok) {
-        const result = await response.json();
-        toast({
-          title: "Teste executado",
-          description: `${testName}: ${result.status}`,
-          variant: result.status === 'passed' ? 'default' : 'destructive'
-        });
-      }
     } catch (error) {
+      console.error(`[AgentsTab] Erro ao executar teste ${testName}:`, error);
       toast({
         title: "Erro",
         description: `Falha ao executar teste ${testName}`,
@@ -171,6 +185,28 @@ const AgentsTab = () => {
       default: return 'outline';
     }
   };
+
+  if (connectionError) {
+    return (
+      <div className="space-y-6">
+        <Card>
+          <CardContent className="p-6">
+            <div className="text-center">
+              <div className="text-lg font-medium text-destructive mb-2">
+                Erro de Conexão com o Backend
+              </div>
+              <div className="text-sm text-muted-foreground mb-4">
+                Não foi possível conectar com o servidor de agentes.
+              </div>
+              <Button onClick={fetchAgents} disabled={loading}>
+                {loading ? 'Tentando reconectar...' : 'Tentar Novamente'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -221,30 +257,36 @@ const AgentsTab = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2">
-              {agents.map((agent) => (
-                <div
-                  key={agent.name}
-                  className={`p-3 border rounded cursor-pointer transition-colors ${
-                    selectedAgent === agent.name ? 'bg-accent' : 'hover:bg-muted'
-                  }`}
-                  onClick={() => setSelectedAgent(agent.name)}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="font-medium">{agent.name}</div>
-                    <Badge variant={getStatusColor(agent.status)}>
-                      {agent.status}
-                    </Badge>
+            {agents.length > 0 ? (
+              <div className="space-y-2">
+                {agents.map((agent) => (
+                  <div
+                    key={agent.name}
+                    className={`p-3 border rounded cursor-pointer transition-colors ${
+                      selectedAgent === agent.name ? 'bg-accent' : 'hover:bg-muted'
+                    }`}
+                    onClick={() => setSelectedAgent(agent.name)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="font-medium">{agent.name}</div>
+                      <Badge variant={getStatusColor(agent.status)}>
+                        {agent.status}
+                      </Badge>
+                    </div>
+                    <div className="text-sm text-muted-foreground mt-1">
+                      {agent.last_action}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Performance: {(agent.performance * 100).toFixed(1)}%
+                    </div>
                   </div>
-                  <div className="text-sm text-muted-foreground mt-1">
-                    {agent.last_action}
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    Performance: {(agent.performance * 100).toFixed(1)}%
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center text-muted-foreground py-8">
+                Nenhum agente disponível
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -290,7 +332,7 @@ const AgentsTab = () => {
                     </div>
                   ) : (
                     <div className="text-center text-muted-foreground">
-                      {loading ? 'Carregando métricas...' : 'Selecione um agente'}
+                      {loading ? 'Carregando métricas...' : selectedAgent ? 'Dados de métricas não disponíveis' : 'Selecione um agente'}
                     </div>
                   )}
                 </CardContent>
@@ -322,7 +364,7 @@ const AgentsTab = () => {
                       </div>
                     ) : (
                       <div className="text-center text-muted-foreground">
-                        Nenhum histórico disponível
+                        {loading ? 'Carregando histórico...' : 'Nenhum histórico disponível'}
                       </div>
                     )}
                   </ScrollArea>
@@ -358,7 +400,7 @@ const AgentsTab = () => {
                       </div>
                     ) : (
                       <div className="text-center text-muted-foreground">
-                        Nenhuma decisão registrada
+                        {loading ? 'Carregando decisões...' : 'Nenhuma decisão registrada'}
                       </div>
                     )}
                   </ScrollArea>
@@ -378,25 +420,31 @@ const AgentsTab = () => {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {availableTests.map((test) => (
-              <div key={test} className="flex items-center justify-between p-3 border rounded">
-                <div>
-                  <div className="font-medium">{test}</div>
-                  <div className="text-sm text-muted-foreground">
-                    Teste de integridade do sistema
+          {availableTests.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {availableTests.map((test) => (
+                <div key={test} className="flex items-center justify-between p-3 border rounded">
+                  <div>
+                    <div className="font-medium">{test}</div>
+                    <div className="text-sm text-muted-foreground">
+                      Teste de integridade do sistema
+                    </div>
                   </div>
+                  <Button 
+                    size="sm" 
+                    variant="outline"
+                    onClick={() => runTest(test)}
+                  >
+                    <Play className="h-4 w-4" />
+                  </Button>
                 </div>
-                <Button 
-                  size="sm" 
-                  variant="outline"
-                  onClick={() => runTest(test)}
-                >
-                  <Play className="h-4 w-4" />
-                </Button>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center text-muted-foreground">
+              Nenhum teste de diagnóstico disponível
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

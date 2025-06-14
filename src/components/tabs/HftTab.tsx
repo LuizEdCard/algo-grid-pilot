@@ -13,6 +13,7 @@ import {
   Plus, Minus, Activity, Signal
 } from 'lucide-react';
 import { toast } from "@/hooks/use-toast";
+import api from '../../services/apiService';
 
 interface HftStatus {
   status: string;
@@ -39,30 +40,33 @@ const HftTab = () => {
   const [hftPerformance, setHftPerformance] = useState<HftPerformance | null>(null);
   const [newSymbol, setNewSymbol] = useState('');
   const [loading, setLoading] = useState(false);
+  const [connectionError, setConnectionError] = useState(false);
 
   // Fetch HFT status
   const fetchHftStatus = async () => {
     try {
-      const response = await fetch('/api/hft/status');
-      if (response.ok) {
-        const data = await response.json();
-        setHftStatus(data);
-      }
+      console.log('[HftTab] Buscando status HFT...');
+      const response = await api.get('/hft/status');
+      console.log('[HftTab] HFT status response:', response.data);
+      setHftStatus(response.data);
+      setConnectionError(false);
     } catch (error) {
-      console.error('Erro ao buscar status HFT:', error);
+      console.error('[HftTab] Erro ao buscar status HFT:', error);
+      setHftStatus(null);
+      setConnectionError(true);
     }
   };
 
   // Fetch HFT performance
   const fetchHftPerformance = async () => {
     try {
-      const response = await fetch('/api/hft/performance');
-      if (response.ok) {
-        const data = await response.json();
-        setHftPerformance(data);
-      }
+      console.log('[HftTab] Buscando performance HFT...');
+      const response = await api.get('/hft/performance');
+      console.log('[HftTab] HFT performance response:', response.data);
+      setHftPerformance(response.data);
     } catch (error) {
-      console.error('Erro ao buscar performance HFT:', error);
+      console.error('[HftTab] Erro ao buscar performance HFT:', error);
+      setHftPerformance(null);
     }
   };
 
@@ -72,26 +76,21 @@ const HftTab = () => {
 
     setLoading(true);
     try {
-      const response = await fetch('/api/hft/symbols', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          action: 'add',
-          symbol: newSymbol.toUpperCase()
-        })
+      console.log(`[HftTab] Adicionando símbolo ${newSymbol.toUpperCase()} ao HFT...`);
+      const response = await api.post('/hft/symbols', { 
+        action: 'add',
+        symbol: newSymbol.toUpperCase()
       });
+      console.log('[HftTab] Symbol added successfully:', response.data);
 
-      if (response.ok) {
-        toast({
-          title: "Símbolo adicionado",
-          description: `${newSymbol.toUpperCase()} foi adicionado ao HFT`
-        });
-        setNewSymbol('');
-        fetchHftStatus();
-      } else {
-        throw new Error('Falha ao adicionar símbolo');
-      }
+      toast({
+        title: "Símbolo adicionado",
+        description: `${newSymbol.toUpperCase()} foi adicionado ao HFT`
+      });
+      setNewSymbol('');
+      fetchHftStatus();
     } catch (error) {
+      console.error('[HftTab] Erro ao adicionar símbolo ao HFT:', error);
       toast({
         title: "Erro",
         description: "Falha ao adicionar símbolo ao HFT",
@@ -106,25 +105,20 @@ const HftTab = () => {
   const removeSymbolFromHft = async (symbol: string) => {
     setLoading(true);
     try {
-      const response = await fetch('/api/hft/symbols', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          action: 'remove',
-          symbol: symbol
-        })
+      console.log(`[HftTab] Removendo símbolo ${symbol} do HFT...`);
+      const response = await api.post('/hft/symbols', { 
+        action: 'remove',
+        symbol: symbol
       });
+      console.log('[HftTab] Symbol removed successfully:', response.data);
 
-      if (response.ok) {
-        toast({
-          title: "Símbolo removido",
-          description: `${symbol} foi removido do HFT`
-        });
-        fetchHftStatus();
-      } else {
-        throw new Error('Falha ao remover símbolo');
-      }
+      toast({
+        title: "Símbolo removido",
+        description: `${symbol} foi removido do HFT`
+      });
+      fetchHftStatus();
     } catch (error) {
+      console.error('[HftTab] Erro ao remover símbolo do HFT:', error);
       toast({
         title: "Erro",
         description: "Falha ao remover símbolo do HFT",
@@ -155,6 +149,28 @@ const HftTab = () => {
       default: return 'outline';
     }
   };
+
+  if (connectionError) {
+    return (
+      <div className="space-y-6">
+        <Card>
+          <CardContent className="p-6">
+            <div className="text-center">
+              <div className="text-lg font-medium text-destructive mb-2">
+                Erro de Conexão com o Backend HFT
+              </div>
+              <div className="text-sm text-muted-foreground mb-4">
+                Não foi possível conectar com o servidor HFT.
+              </div>
+              <Button onClick={fetchHftStatus} disabled={loading}>
+                {loading ? 'Tentando reconectar...' : 'Tentar Novamente'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -238,7 +254,7 @@ const HftTab = () => {
             </div>
           ) : (
             <div className="text-center text-muted-foreground">
-              Carregando métricas de performance...
+              Dados de performance HFT não disponíveis
             </div>
           )}
         </CardContent>

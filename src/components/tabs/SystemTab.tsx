@@ -12,6 +12,7 @@ import {
   TrendingUp, Zap, Shield, Monitor 
 } from 'lucide-react';
 import { toast } from "@/hooks/use-toast";
+import api from '../../services/apiService';
 
 const SystemTab = () => {
   const [systemStatus, setSystemStatus] = useState<any>(null);
@@ -20,51 +21,72 @@ const SystemTab = () => {
   const [storageStats, setStorageStats] = useState<any>(null);
   const [websocketStatus, setWebsocketStatus] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [connectionError, setConnectionError] = useState(false);
 
   // Fetch system data
   const fetchSystemData = async () => {
     setLoading(true);
+    setConnectionError(false);
+    
     try {
+      console.log('[SystemTab] Iniciando busca de dados do sistema...');
+      
       // System status
-      const statusResponse = await fetch('/api/system/status');
-      if (statusResponse.ok) {
-        const statusData = await statusResponse.json();
-        setSystemStatus(statusData);
+      try {
+        const statusResponse = await api.get('/system/status');
+        console.log('[SystemTab] Status response:', statusResponse.data);
+        setSystemStatus(statusResponse.data);
+      } catch (error) {
+        console.error('[SystemTab] Erro ao buscar status do sistema:', error);
+        setSystemStatus(null);
       }
 
       // Balance
-      const balanceResponse = await fetch('/api/balance/summary');
-      if (balanceResponse.ok) {
-        const balanceData = await balanceResponse.json();
-        setBalance(balanceData);
+      try {
+        const balanceResponse = await api.get('/balance/summary');
+        console.log('[SystemTab] Balance response:', balanceResponse.data);
+        setBalance(balanceResponse.data);
+      } catch (error) {
+        console.error('[SystemTab] Erro ao buscar saldo:', error);
+        setBalance(null);
       }
 
       // Operation mode
-      const modeResponse = await fetch('/api/operation_mode');
-      if (modeResponse.ok) {
-        const modeData = await modeResponse.json();
-        setOperationMode(modeData.mode || 'normal');
+      try {
+        const modeResponse = await api.get('/operation_mode');
+        console.log('[SystemTab] Mode response:', modeResponse.data);
+        setOperationMode(modeResponse.data?.mode || '');
+      } catch (error) {
+        console.error('[SystemTab] Erro ao buscar modo de operação:', error);
+        setOperationMode('');
       }
 
       // Storage stats
-      const storageResponse = await fetch('/api/storage/stats');
-      if (storageResponse.ok) {
-        const storageData = await storageResponse.json();
-        setStorageStats(storageData);
+      try {
+        const storageResponse = await api.get('/storage/stats');
+        console.log('[SystemTab] Storage response:', storageResponse.data);
+        setStorageStats(storageResponse.data);
+      } catch (error) {
+        console.error('[SystemTab] Erro ao buscar estatísticas de armazenamento:', error);
+        setStorageStats(null);
       }
 
       // WebSocket status
-      const wsResponse = await fetch('/api/websocket/status');
-      if (wsResponse.ok) {
-        const wsData = await wsResponse.json();
-        setWebsocketStatus(wsData);
+      try {
+        const wsResponse = await api.get('/websocket/status');
+        console.log('[SystemTab] WebSocket response:', wsResponse.data);
+        setWebsocketStatus(wsResponse.data);
+      } catch (error) {
+        console.error('[SystemTab] Erro ao buscar status do WebSocket:', error);
+        setWebsocketStatus(null);
       }
 
     } catch (error) {
-      console.error('Erro ao buscar dados do sistema:', error);
+      console.error('[SystemTab] Erro geral na busca de dados:', error);
+      setConnectionError(true);
       toast({
-        title: "Erro",
-        description: "Falha ao carregar dados do sistema",
+        title: "Erro de Conexão",
+        description: "Não foi possível conectar com o backend. Verifique se o servidor está rodando.",
         variant: "destructive"
       });
     } finally {
@@ -80,20 +102,17 @@ const SystemTab = () => {
 
   const handleOperationModeChange = async (newMode: string) => {
     try {
-      const response = await fetch('/api/operation_mode', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: newMode })
+      console.log('[SystemTab] Alterando modo de operação para:', newMode);
+      const response = await api.post('/operation_mode', { mode: newMode });
+      console.log('[SystemTab] Modo alterado com sucesso:', response.data);
+      
+      setOperationMode(newMode);
+      toast({
+        title: "Modo alterado",
+        description: `Modo de operação alterado para ${newMode}`
       });
-
-      if (response.ok) {
-        setOperationMode(newMode);
-        toast({
-          title: "Modo alterado",
-          description: `Modo de operação alterado para ${newMode}`
-        });
-      }
     } catch (error) {
+      console.error('[SystemTab] Erro ao alterar modo de operação:', error);
       toast({
         title: "Erro",
         description: "Falha ao alterar modo de operação",
@@ -104,18 +123,17 @@ const SystemTab = () => {
 
   const handleStorageCleanup = async () => {
     try {
-      const response = await fetch('/api/storage/cleanup', {
-        method: 'POST'
+      console.log('[SystemTab] Iniciando limpeza de armazenamento...');
+      const response = await api.post('/storage/cleanup');
+      console.log('[SystemTab] Limpeza concluída:', response.data);
+      
+      toast({
+        title: "Limpeza concluída",
+        description: "Dados antigos removidos com sucesso"
       });
-
-      if (response.ok) {
-        toast({
-          title: "Limpeza concluída",
-          description: "Dados antigos removidos com sucesso"
-        });
-        fetchSystemData(); // Refresh data
-      }
+      fetchSystemData(); // Refresh data
     } catch (error) {
+      console.error('[SystemTab] Erro na limpeza de armazenamento:', error);
       toast({
         title: "Erro",
         description: "Falha na limpeza de dados",
@@ -123,6 +141,28 @@ const SystemTab = () => {
       });
     }
   };
+
+  if (connectionError) {
+    return (
+      <div className="space-y-6">
+        <Card>
+          <CardContent className="p-6">
+            <div className="text-center">
+              <div className="text-lg font-medium text-destructive mb-2">
+                Erro de Conexão com o Backend
+              </div>
+              <div className="text-sm text-muted-foreground mb-4">
+                Não foi possível conectar com o servidor. Verifique se o backend está rodando.
+              </div>
+              <Button onClick={fetchSystemData} disabled={loading}>
+                {loading ? 'Tentando reconectar...' : 'Tentar Novamente'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -135,26 +175,32 @@ const SystemTab = () => {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-green-600">
-                {systemStatus?.status === 'healthy' ? 'Saudável' : 'Verificando...'}
+          {systemStatus ? (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-green-600">
+                  {systemStatus?.status === 'healthy' ? 'Saudável' : systemStatus?.status || 'Desconhecido'}
+                </div>
+                <div className="text-sm text-muted-foreground">Status Geral</div>
               </div>
-              <div className="text-sm text-muted-foreground">Status Geral</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold">
-                {systemStatus?.active_bots || 0}
+              <div className="text-center">
+                <div className="text-2xl font-bold">
+                  {systemStatus?.active_bots || 0}
+                </div>
+                <div className="text-sm text-muted-foreground">Bots Ativos</div>
               </div>
-              <div className="text-sm text-muted-foreground">Bots Ativos</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold">
-                {systemStatus?.uptime || '--'}
+              <div className="text-center">
+                <div className="text-2xl font-bold">
+                  {systemStatus?.uptime || '--'}
+                </div>
+                <div className="text-sm text-muted-foreground">Uptime</div>
               </div>
-              <div className="text-sm text-muted-foreground">Uptime</div>
             </div>
-          </div>
+          ) : (
+            <div className="text-center text-muted-foreground">
+              {loading ? 'Carregando status do sistema...' : 'Dados do sistema não disponíveis'}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -221,7 +267,7 @@ const SystemTab = () => {
             </div>
           ) : (
             <div className="text-center text-muted-foreground">
-              Carregando dados de saldo...
+              {loading ? 'Carregando dados de saldo...' : 'Dados de saldo não disponíveis'}
             </div>
           )}
         </CardContent>
@@ -251,7 +297,7 @@ const SystemTab = () => {
               ))
             ) : (
               <div className="text-center text-muted-foreground">
-                Verificando conexões...
+                {loading ? 'Verificando conexões...' : 'Dados de conexão WebSocket não disponíveis'}
               </div>
             )}
           </div>
@@ -268,7 +314,7 @@ const SystemTab = () => {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {storageStats && (
+            {storageStats ? (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="text-center">
                   <div className="text-2xl font-bold">
@@ -288,6 +334,10 @@ const SystemTab = () => {
                   </div>
                   <div className="text-sm text-muted-foreground">Arquivos Antigos</div>
                 </div>
+              </div>
+            ) : (
+              <div className="text-center text-muted-foreground">
+                {loading ? 'Carregando estatísticas de armazenamento...' : 'Dados de armazenamento não disponíveis'}
               </div>
             )}
             
