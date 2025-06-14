@@ -29,6 +29,8 @@ import RealFlaskApiService from '../services/realApiService';
 import { MarketData, GridLevel } from '../types/trading';
 
 const ImprovedIndex = () => {
+  console.log('[ImprovedIndex] Component initializing...');
+  
   const [selectedSymbol, setSelectedSymbol] = useState('BTCUSDT');
   const [marketData, setMarketData] = useState<MarketData | undefined>();
   const [gridLevels, setGridLevels] = useState<GridLevel[]>([]);
@@ -36,33 +38,82 @@ const ImprovedIndex = () => {
   const [isTrading, setIsTrading] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [activeTab, setActiveTab] = useState('trading');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  console.log('[ImprovedIndex] State initialized, activeTab:', activeTab);
 
   // Fetch real pairs from Flask API
   useEffect(() => {
+    console.log('[ImprovedIndex] useEffect triggered for data fetching');
+    
     const fetchPairs = async () => {
       try {
+        setLoading(true);
+        setError(null);
         console.log('[ImprovedIndex] Buscando dados de mercado...');
+        
         const marketResponse = await RealFlaskApiService.getMarketData(100);
         console.log('[ImprovedIndex] Market data response:', marketResponse);
         
         if (marketResponse?.tickers) {
           const convertedPairs = RealFlaskApiService.convertMarketData(marketResponse);
+          console.log('[ImprovedIndex] Converted pairs:', convertedPairs.length, 'pairs');
+          
           setAvailablePairs(convertedPairs);
           
           const current = convertedPairs.find(p => p.symbol === selectedSymbol);
           if (current) {
             setMarketData(current);
+            console.log('[ImprovedIndex] Set current market data for:', selectedSymbol);
           }
           
           setLastUpdate(new Date());
+        } else {
+          console.warn('[ImprovedIndex] No tickers in response');
+          setError('Nenhum dado de mercado recebido');
         }
       } catch (error) {
         console.error('[ImprovedIndex] Erro ao buscar dados de mercado:', error);
+        setError(`Erro ao carregar dados: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+        
+        // Fallback data for testing
+        const fallbackData: MarketData[] = [
+          {
+            symbol: 'BTCUSDT',
+            lastPrice: 67250.50,
+            bid: 67200.00,
+            ask: 67300.00,
+            volume24h: 1250000000.00,
+            priceChangePercent: 2.45,
+            high24h: 68000.00,
+            low24h: 66500.00
+          },
+          {
+            symbol: 'ETHUSDT',
+            lastPrice: 3245.75,
+            bid: 3240.00,
+            ask: 3250.00,
+            volume24h: 850000000.00,
+            priceChangePercent: -1.20,
+            high24h: 3290.00,
+            low24h: 3200.00
+          }
+        ];
+        
+        setAvailablePairs(fallbackData);
+        const current = fallbackData.find(p => p.symbol === selectedSymbol);
+        if (current) {
+          setMarketData(current);
+        }
+        
         toast({
-          title: "Erro ao carregar dados",
-          description: "Não foi possível carregar os dados de mercado",
-          variant: "destructive"
+          title: "Dados Simulados",
+          description: "Usando dados simulados devido à falha na conexão",
+          variant: "default"
         });
+      } finally {
+        setLoading(false);
       }
     };
 
@@ -73,6 +124,8 @@ const ImprovedIndex = () => {
 
   // Generate grid levels based on current price and trading status
   useEffect(() => {
+    console.log('[ImprovedIndex] Grid levels effect triggered, isTrading:', isTrading, 'marketData:', !!marketData);
+    
     if (marketData && isTrading) {
       const levels: GridLevel[] = [];
       const basePrice = marketData.lastPrice;
@@ -92,12 +145,14 @@ const ImprovedIndex = () => {
         }
       }
       setGridLevels(levels);
+      console.log('[ImprovedIndex] Generated', levels.length, 'grid levels');
     } else {
       setGridLevels([]);
     }
   }, [marketData, selectedSymbol, isTrading]);
 
   const handleSymbolChange = (symbol: string) => {
+    console.log('[ImprovedIndex] Symbol changing to:', symbol);
     setSelectedSymbol(symbol);
     const current = availablePairs.find(p => p.symbol === symbol);
     if (current) {
@@ -211,6 +266,38 @@ const ImprovedIndex = () => {
       setIsTrading(false);
     }
   };
+
+  console.log('[ImprovedIndex] About to render, loading:', loading, 'error:', error);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary mx-auto"></div>
+          <h2 className="text-2xl font-semibold">Carregando Grid Trading Bot...</h2>
+          <p className="text-muted-foreground">Conectando com o backend...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center space-y-4 max-w-md">
+          <div className="text-destructive text-6xl">⚠️</div>
+          <h2 className="text-2xl font-semibold text-destructive">Erro de Conexão</h2>
+          <p className="text-muted-foreground">{error}</p>
+          <Button 
+            onClick={() => window.location.reload()} 
+            variant="outline"
+          >
+            Tentar Novamente
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">

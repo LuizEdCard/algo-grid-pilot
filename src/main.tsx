@@ -1,3 +1,4 @@
+
 import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
 import './index.css'
@@ -10,4 +11,12 @@ window.addEventListener('unhandledrejection', (event) => {
   console.error('Unhandled Promise Rejection:', event.reason);
 });
 
-createRoot(document.getElementById("root")!).render(<App />);
+console.log('Starting application...');
+
+const rootElement = document.getElementById("root");
+if (!rootElement) {
+  console.error('Root element not found!');
+} else {
+  console.log('Root element found, rendering app...');
+  createRoot(rootElement).render(<App />);
+}
